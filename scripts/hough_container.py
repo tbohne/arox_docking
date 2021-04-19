@@ -105,7 +105,8 @@ def generate_marker(hough_space, header, corresponding_points):
                 # equal radius -> angle has to be different
                 if -1 < abs(abs(radius) - abs(rad)) < 1:
                     # also equal angle -> forbidden
-                    if -5 < abs(theta - found_line_params[radius]) < 5 or 175 < abs(theta - found_line_params[radius]) < 185:
+                    if -5 < abs(theta - found_line_params[radius]) < 5 or 175 < abs(
+                            theta - found_line_params[radius]) < 185:
                         allowed = False
                         break
 
@@ -123,14 +124,78 @@ def generate_marker(hough_space, header, corresponding_points):
 
     if line_cnt == 3:
         rospy.loginfo("parameters of detected lines: %s", found_line_params)
+
+        radii = [r for r in found_line_params]
+        thetas = [found_line_params[r] for r in radii]
+
+        intersection12 = intersection((radii[0], thetas[0]), (radii[1], thetas[1]))
+        intersection13 = intersection((radii[0], thetas[0]), (radii[2], thetas[2]))
+        intersection23 = intersection((radii[1], thetas[1]), (radii[2], thetas[2]))
+
+        p1 = Point(); p2 = Point(); p3 = Point()
+        intersections = []
+        if intersection12:
+            p1.x, p1.y = intersection12
+            intersections.append(p1)
+        if intersection13:
+            p2.x, p2.y = intersection13
+            intersections.append(p2)
+        if intersection23:
+            p3.x, p3.y = intersection23
+            intersections.append(p3)
+
+        rospy.loginfo("INTER12: %s", intersection12)
+        rospy.loginfo("INTER13: %s", intersection13)
+        rospy.loginfo("INTER23: %s", intersection23)
+
+        publish_intersections(intersections, header)
+
         return lines
 
     rospy.loginfo("NOTHING DETECTED!")
     return None
 
 
-def cloud_callback(cloud):
+def publish_intersections(intersections, header):
+    marker = Marker()
+    marker.header = header
+    marker.id = 1
 
+    marker.type = marker.POINTS
+    marker.action = marker.ADD
+    marker.pose.orientation.w = 1
+
+    for point in intersections:
+        marker.points.append(point)
+
+    marker.scale.x = 0.4
+    marker.scale.y = 0.4
+    marker.scale.z = 0.4
+    marker.color.a = 1.0
+    marker.color.b = 1.0
+
+    hough_line_pub.publish(marker)
+
+
+def intersection(line1, line2):
+    rho1, theta1 = line1
+    rho2, theta2 = line2
+
+    # parallel lines don't intersect
+    if -5 < abs(theta1 - theta2) < 5 or 175 < abs(theta1 - theta2) < 185:
+        return
+
+    # to radians
+    theta1 = theta1 * np.pi / 180
+    theta2 = theta2 * np.pi / 180
+
+    A = np.array([[np.cos(theta1), np.sin(theta1)], [np.cos(theta2), np.sin(theta2)]])
+    b = np.array([[rho1], [rho2]])
+    x0, y0 = np.linalg.solve(A, b)
+    return x0, y0
+
+
+def cloud_callback(cloud):
     rospy.loginfo("receiving cloud..")
 
     global hough_line_pub
@@ -160,7 +225,7 @@ def cloud_callback(cloud):
                 # distance to origin
                 r = x * cos_theta + y * sin_theta
                 if r < RADIUS_MIN or r > RADIUS_MAX:
-                    #rospy.logerr("Radius out of range!")
+                    # rospy.logerr("Radius out of range!")
                     continue
 
                 r_idx = int((r - RADIUS_MIN) / DELTA_RADIUS)
