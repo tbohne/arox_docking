@@ -11,20 +11,24 @@ DELTA_THETA = 2
 THETA_MIN = 0
 THETA_MAX = 360
 # should be sufficiently precise to identify reasonable lines
-DELTA_RADIUS = 0.05
+DELTA_RADIUS = 0.01
 # TODO: check sensor range
 RADIUS_MIN = -20.0
 RADIUS_MAX = 20.0
 # TODO: distance to robot pos should be considered for the ACC_THRESH
-ACC_THRESHOLD = 80
+ACC_THRESHOLD = 10
 
 
-def get_theta_from_index(index):
-    return index * DELTA_THETA + THETA_MIN
+def get_theta_from_index(idx):
+    return idx * DELTA_THETA + THETA_MIN
 
 
-def get_radius_from_index(index):
-    return index * DELTA_RADIUS + RADIUS_MIN
+def get_radius_from_index(idx):
+    return idx * DELTA_RADIUS + RADIUS_MIN
+
+
+def calc_hough_y(theta, radius, x):
+    return (radius - np.cos(theta * np.pi / 180.0) * x) / np.sin(theta * np.pi / 180.0)
 
 
 def generate_default_marker(header):
@@ -41,51 +45,88 @@ def generate_default_marker(header):
     return lines
 
 
+def retrieve_best_line(hough_space):
+    max_idx = hough_space.argmax()
+    c, r = np.unravel_index(max_idx, hough_space.shape)
+    assert hough_space.max() == hough_space[c][r]
+    return c, r
+
+
+def append_points(theta, c, lines):
+    p1 = Point()
+    p2 = Point()
+    p1.x = -100
+    p2.x = 100
+
+    if theta == 0:
+        p1.y = 0
+        p2.y = 0
+    else:
+        p1.y = calc_hough_y(theta, get_radius_from_index(c), p1.x)
+        p2.y = calc_hough_y(theta, get_radius_from_index(c), p2.x)
+    lines.points.append(p1)
+    lines.points.append(p2)
+
+
 def generate_marker(hough_space, header, corresponding_points):
     lines = generate_default_marker(header)
-    cnt = 0
+    c, r = retrieve_best_line(hough_space)
+    hough_space[c][r] = 0
+    theta_best = get_theta_from_index(r)
+    append_points(theta_best, c, lines)
+    # point_lists.append(np.array(corresponding_points[(c, r)]))
+    line_cnt = 1
 
-    for r_idx in range(len(hough_space)):
-        for theta_idx in range(len(hough_space[r_idx])):
+    found_line_params = {get_radius_from_index(c): get_theta_from_index(r)}
 
-            # LINE CONDITION
-            if hough_space[r_idx][theta_idx] > ACC_THRESHOLD:
-                cnt += 1
+    # container shape -> 3 lines (U-shape)
+    while line_cnt < 3:
 
-                # ORTHOGONALITY CONDITION # TODO: improve performance
-                orthogonal = False
-                for r_idx_2 in range(len(hough_space)):
-                    if orthogonal:
+        # no peaks in hough space -> no lines
+        if hough_space.max() <= ACC_THRESHOLD:
+            break
+
+        c, r = retrieve_best_line(hough_space)
+        theta = get_theta_from_index(r)
+        diff = abs(theta - theta_best)
+
+        # should be either ~90° or ~270°
+        if 85 < diff < 95 or 265 < diff < 275:
+
+            # lst = np.array(corresponding_points[(c, r)])
+            # x_vals = np.array([p.x for p in lst])
+            # y_vals = np.array([p.y for p in lst])
+            # x_mean = np.mean(x_vals)
+            # y_mean = np.mean(y_vals)
+
+            allowed = True
+            for radius in found_line_params:
+                rad = get_radius_from_index(c)
+                # equal radius -> angle has to be different
+                if -1 < abs(abs(radius) - abs(rad)) < 1:
+                    # also equal angle -> forbidden
+                    if -5 < abs(theta - found_line_params[radius]) < 5 or 175 < abs(theta - found_line_params[radius]) < 185:
+                        allowed = False
                         break
-                    if r_idx_2 == r_idx:
-                        continue
-                    for theta_idx_2 in range(len(hough_space[r_idx_2])):
-                        # also a line
-                        if hough_space[r_idx_2][theta_idx_2] > ACC_THRESHOLD:
-                            theta = get_theta_from_index(theta_idx)
-                            theta2 = get_theta_from_index(theta_idx_2)
-                            diff = abs(theta - theta2) - 90
-                            if -1 < diff < 1:
-                                orthogonal = True
-                                break
 
-                if not orthogonal:
-                    continue
+            if allowed:
+                # TODO: REAL POINTS #############################################
+                # for i in range(len(lst)):
+                #     # only take the points near the mean
+                #     #if abs(lst[i].x - x_mean) < 0.5 and abs(lst[i].y - y_mean) < 0.5:
+                #     lines.points.append(lst[i])
+                #################################################################
+                append_points(theta, c, lines)
+                found_line_params[get_radius_from_index(c)] = theta
+                line_cnt += 1
+        hough_space[c][r] = 0
 
-                # list of points on line
-                lst = np.array(corresponding_points[(r_idx, theta_idx)])
-                x_vals = np.array([p.x for p in lst])
-                y_vals = np.array([p.y for p in lst])
-                x_mean = np.mean(x_vals)
-                y_mean = np.mean(y_vals)
+    if line_cnt == 3:
+        rospy.loginfo("parameters of detected lines: %s", found_line_params)
+        return lines
 
-                for i in range(len(lst)):
-                    # only take the points near the mean
-                    if abs(lst[i].x - x_mean) < 0.3 and abs(lst[i].y - y_mean) < 0.3:
-                        lines.points.append(corresponding_points[(r_idx, theta_idx)][i])
-
-    rospy.loginfo("line cnt: %s", cnt)
-    return lines
+    rospy.loginfo("NOTHING DETECTED!")
+    return None
 
 
 def cloud_callback(cloud):
@@ -119,7 +160,7 @@ def cloud_callback(cloud):
                 # distance to origin
                 r = x * cos_theta + y * sin_theta
                 if r < RADIUS_MIN or r > RADIUS_MAX:
-                    # rospy.logerr("Radius out of range!")
+                    #rospy.logerr("Radius out of range!")
                     continue
 
                 r_idx = int((r - RADIUS_MIN) / DELTA_RADIUS)
@@ -131,8 +172,9 @@ def cloud_callback(cloud):
                 corresponding_points[(r_idx, theta_idx)].append(p)
 
     lines = generate_marker(hough_space, cloud.header, corresponding_points)
-    rospy.loginfo(cloud.header)
-    hough_line_pub.publish(lines)
+    if lines is not None:
+        rospy.loginfo(cloud.header)
+        hough_line_pub.publish(lines)
 
 
 def node():
