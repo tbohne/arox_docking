@@ -133,47 +133,28 @@ def generate_marker(hough_space, header, corresponding_points):
         radii = [r for r in found_line_params]
         thetas = [found_line_params[r] for r in radii]
 
-        intersection12 = intersection((radii[0], thetas[0]), (radii[1], thetas[1]))
-        intersection13 = intersection((radii[0], thetas[0]), (radii[2], thetas[2]))
-        intersection23 = intersection((radii[1], thetas[1]), (radii[2], thetas[2]))
+        intersections = [intersection((radii[0], thetas[0]), (radii[1], thetas[1])),
+                         intersection((radii[0], thetas[0]), (radii[2], thetas[2])),
+                         intersection((radii[1], thetas[1]), (radii[2], thetas[2]))]
 
-        p1 = Point(); p2 = Point(); p3 = Point()
-        if intersection12:
-            p1.x, p1.y = intersection12
-        if intersection13:
-            p2.x, p2.y = intersection13
-        if intersection23:
-            p3.x, p3.y = intersection23
+        intersection_points = []
+        for inter in intersections:
+            if inter:
+                p = Point()
+                p.x, p.y = inter
+                intersection_points.append(p)
 
-        rospy.loginfo("INTER12: %s", intersection12)
-        rospy.loginfo("INTER13: %s", intersection13)
-        rospy.loginfo("INTER23: %s", intersection23)
+        container_corners = []
+        for p in intersection_points:
+            for j in intersection_points:
+                if p != j:
+                    d = dist(p, j)
+                    if container_side_detected(d):
+                        rospy.loginfo("dist: %s", d)
+                        container_corners.append(p)
 
-        intersections = []
-
-        if intersection23:
-            dist23 = dist(p2, p3)
-            rospy.loginfo("dist: %s", dist23)
-            if container_side_detected(dist23):
-                intersections.append(p2)
-                intersections.append(p3)
-
-        elif intersection12:
-            dist12 = dist(p1, p2)
-            rospy.loginfo("dist: %s", dist12)
-            if container_side_detected(dist12):
-                intersections.append(p1)
-                intersections.append(p2)
-
-        elif intersection13:
-            dist13 = dist(p1, p3)
-            rospy.loginfo("dist: %s", dist13)
-            if container_side_detected(dist13):
-                intersections.append(p1)
-                intersections.append(p3)
-
-        if len(intersections) > 0:
-            publish_intersections(intersections, header)
+        if len(container_corners) > 0:
+            publish_intersections(container_corners, header)
         else:
             # reset outdated markers
             publish_intersections([], header)
@@ -190,7 +171,7 @@ def dist(p1, p2):
 
 def container_side_detected(length):
     return length - CONTAINER_LENGTH * EPSILON <= CONTAINER_LENGTH <= length + CONTAINER_LENGTH * EPSILON \
-            or length - CONTAINER_WIDTH * EPSILON <= CONTAINER_WIDTH <= length + CONTAINER_WIDTH * EPSILON
+           or length - CONTAINER_WIDTH * EPSILON <= CONTAINER_WIDTH <= length + CONTAINER_WIDTH * EPSILON
 
 
 def publish_intersections(intersections, header):
