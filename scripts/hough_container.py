@@ -1,17 +1,22 @@
 #!/usr/bin/env python
 import rospy
+import math
 import numpy as np
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs import point_cloud2
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 
+CONTAINER_WIDTH = 2.83
+CONTAINER_LENGTH = 3.7
+EPSILON = 0.2
+
 hough_line_pub = None
-DELTA_THETA = 2
+DELTA_THETA = 3
 THETA_MIN = 0
 THETA_MAX = 360
 # should be sufficiently precise to identify reasonable lines
-DELTA_RADIUS = 0.01
+DELTA_RADIUS = 0.02
 # TODO: check sensor range
 RADIUS_MIN = -20.0
 RADIUS_MAX = 20.0
@@ -91,7 +96,7 @@ def generate_marker(hough_space, header, corresponding_points):
         diff = abs(theta - theta_best)
 
         # should be either ~90° or ~270°
-        if 85 < diff < 95 or 265 < diff < 275:
+        if 88 < diff < 92 or 268 < diff < 272:
 
             # lst = np.array(corresponding_points[(c, r)])
             # x_vals = np.array([p.x for p in lst])
@@ -133,27 +138,59 @@ def generate_marker(hough_space, header, corresponding_points):
         intersection23 = intersection((radii[1], thetas[1]), (radii[2], thetas[2]))
 
         p1 = Point(); p2 = Point(); p3 = Point()
-        intersections = []
         if intersection12:
             p1.x, p1.y = intersection12
-            intersections.append(p1)
         if intersection13:
             p2.x, p2.y = intersection13
-            intersections.append(p2)
         if intersection23:
             p3.x, p3.y = intersection23
-            intersections.append(p3)
 
         rospy.loginfo("INTER12: %s", intersection12)
         rospy.loginfo("INTER13: %s", intersection13)
         rospy.loginfo("INTER23: %s", intersection23)
 
-        publish_intersections(intersections, header)
+        intersections = []
+
+        if intersection23:
+            dist23 = dist(p2, p3)
+            rospy.loginfo("dist: %s", dist23)
+            if container_side_detected(dist23):
+                intersections.append(p2)
+                intersections.append(p3)
+
+        elif intersection12:
+            dist12 = dist(p1, p2)
+            rospy.loginfo("dist: %s", dist12)
+            if container_side_detected(dist12):
+                intersections.append(p1)
+                intersections.append(p2)
+
+        elif intersection13:
+            dist13 = dist(p1, p3)
+            rospy.loginfo("dist: %s", dist13)
+            if container_side_detected(dist13):
+                intersections.append(p1)
+                intersections.append(p3)
+
+        if len(intersections) > 0:
+            publish_intersections(intersections, header)
+        else:
+            # reset outdated markers
+            publish_intersections([], header)
 
         return lines
 
     rospy.loginfo("NOTHING DETECTED!")
     return None
+
+
+def dist(p1, p2):
+    return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
+
+
+def container_side_detected(length):
+    return length - CONTAINER_LENGTH * EPSILON <= CONTAINER_LENGTH <= length + CONTAINER_LENGTH * EPSILON \
+            or length - CONTAINER_WIDTH * EPSILON <= CONTAINER_WIDTH <= length + CONTAINER_WIDTH * EPSILON
 
 
 def publish_intersections(intersections, header):
@@ -199,6 +236,8 @@ def cloud_callback(cloud):
     rospy.loginfo("receiving cloud..")
 
     global hough_line_pub
+
+    rospy.loginfo("SEQ: %s", cloud.header.seq)
 
     # convert point cloud to a generator of the individual points (2D)
     point_generator = point_cloud2.read_points(cloud, field_names=("x", "y"))
