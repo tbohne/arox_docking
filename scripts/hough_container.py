@@ -11,7 +11,9 @@ CONTAINER_WIDTH = 2.83
 CONTAINER_LENGTH = 3.7
 EPSILON = 0.2
 
-hough_line_pub = None
+HOUGH_LINE_PUB = None
+CORNER_PUB = None
+
 DELTA_THETA = 3
 THETA_MIN = 0
 THETA_MAX = 360
@@ -36,7 +38,7 @@ def calc_hough_y(theta, radius, x):
     return (radius - np.cos(theta * np.pi / 180.0) * x) / np.sin(theta * np.pi / 180.0)
 
 
-def generate_default_marker(header):
+def generate_default_line_marker(header):
     lines = Marker()
     lines.header = header
     lines.ns = "hough"
@@ -57,7 +59,7 @@ def retrieve_best_line(hough_space):
     return c, r
 
 
-def append_points(theta, c, lines):
+def append_line_points(theta, rad_idx, lines):
     p1 = Point()
     p2 = Point()
     p1.x = -100
@@ -67,21 +69,20 @@ def append_points(theta, c, lines):
         p1.y = 0
         p2.y = 0
     else:
-        p1.y = calc_hough_y(theta, get_radius_from_index(c), p1.x)
-        p2.y = calc_hough_y(theta, get_radius_from_index(c), p2.x)
+        p1.y = calc_hough_y(theta, get_radius_from_index(rad_idx), p1.x)
+        p2.y = calc_hough_y(theta, get_radius_from_index(rad_idx), p2.x)
     lines.points.append(p1)
     lines.points.append(p2)
 
 
 def generate_marker(hough_space, header, corresponding_points):
-    lines = generate_default_marker(header)
+    lines = generate_default_line_marker(header)
     c, r = retrieve_best_line(hough_space)
     hough_space[c][r] = 0
     theta_best = get_theta_from_index(r)
-    append_points(theta_best, c, lines)
+    append_line_points(theta_best, c, lines)
     # point_lists.append(np.array(corresponding_points[(c, r)]))
     line_cnt = 1
-
     found_line_params = {get_radius_from_index(c): get_theta_from_index(r)}
 
     # container shape -> 3 lines (U-shape)
@@ -110,8 +111,8 @@ def generate_marker(hough_space, header, corresponding_points):
                 # equal radius -> angle has to be different
                 if -1 < abs(abs(radius) - abs(rad)) < 1:
                     # also equal angle -> forbidden
-                    if -5 < abs(theta - found_line_params[radius]) < 5 or 175 < abs(
-                            theta - found_line_params[radius]) < 185:
+                    if -2 < abs(theta - found_line_params[radius]) < 2 or 178 < abs(
+                            theta - found_line_params[radius]) < 182:
                         allowed = False
                         break
 
@@ -122,7 +123,7 @@ def generate_marker(hough_space, header, corresponding_points):
                 #     #if abs(lst[i].x - x_mean) < 0.5 and abs(lst[i].y - y_mean) < 0.5:
                 #     lines.points.append(lst[i])
                 #################################################################
-                append_points(theta, c, lines)
+                append_line_points(theta, c, lines)
                 found_line_params[get_radius_from_index(c)] = theta
                 line_cnt += 1
         hough_space[c][r] = 0
@@ -154,10 +155,10 @@ def generate_marker(hough_space, header, corresponding_points):
                         container_corners.append(p)
 
         if len(container_corners) > 0:
-            publish_intersections(container_corners, header)
+            publish_corners(container_corners, header)
         else:
             # reset outdated markers
-            publish_intersections([], header)
+            publish_corners([], header)
 
         return lines
 
@@ -174,25 +175,20 @@ def container_side_detected(length):
            or length - CONTAINER_WIDTH * EPSILON <= CONTAINER_WIDTH <= length + CONTAINER_WIDTH * EPSILON
 
 
-def publish_intersections(intersections, header):
+def publish_corners(intersections, header):
+    global CORNER_PUB
+
     marker = Marker()
     marker.header = header
     marker.id = 1
-
     marker.type = marker.POINTS
     marker.action = marker.ADD
     marker.pose.orientation.w = 1
+    marker.points = intersections
+    marker.scale.x = marker.scale.y = marker.scale.z = 0.4
+    marker.color.a = marker.color.b = 1.0
 
-    for point in intersections:
-        marker.points.append(point)
-
-    marker.scale.x = 0.4
-    marker.scale.y = 0.4
-    marker.scale.z = 0.4
-    marker.color.a = 1.0
-    marker.color.b = 1.0
-
-    hough_line_pub.publish(marker)
+    CORNER_PUB.publish(marker)
 
 
 def intersection(line1, line2):
@@ -216,7 +212,7 @@ def intersection(line1, line2):
 def cloud_callback(cloud):
     rospy.loginfo("receiving cloud..")
 
-    global hough_line_pub
+    global HOUGH_LINE_PUB
 
     rospy.loginfo("SEQ: %s", cloud.header.seq)
 
@@ -259,14 +255,15 @@ def cloud_callback(cloud):
     lines = generate_marker(hough_space, cloud.header, corresponding_points)
     if lines is not None:
         rospy.loginfo(cloud.header)
-        hough_line_pub.publish(lines)
+        HOUGH_LINE_PUB.publish(lines)
 
 
 def node():
-    global hough_line_pub
+    global HOUGH_LINE_PUB, CORNER_PUB
 
     rospy.init_node('hough_container')
-    hough_line_pub = rospy.Publisher("/houghlines", Marker, queue_size=1)
+    HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
+    CORNER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
     rospy.Subscriber("/velodyne_points", PointCloud2, cloud_callback, queue_size=1, buff_size=2 ** 32)
 
     rospy.spin()
