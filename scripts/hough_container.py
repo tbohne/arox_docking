@@ -76,14 +76,13 @@ def append_line_points(theta, rad_idx, lines):
 
 
 def generate_marker(hough_space, header, corresponding_points):
+
     lines = generate_default_line_marker(header)
-    c, r = retrieve_best_line(hough_space)
-    hough_space[c][r] = 0
-    theta_best = get_theta_from_index(r)
-    append_line_points(theta_best, c, lines)
+    theta_best = None
+    line_cnt = 0
+    found_line_params = {}
+
     # point_lists.append(np.array(corresponding_points[(c, r)]))
-    line_cnt = 1
-    found_line_params = {get_radius_from_index(c): get_theta_from_index(r)}
 
     # container shape -> 3 lines (U-shape)
     while line_cnt < 3:
@@ -94,7 +93,8 @@ def generate_marker(hough_space, header, corresponding_points):
 
         c, r = retrieve_best_line(hough_space)
         theta = get_theta_from_index(r)
-        diff = abs(theta - theta_best)
+
+        diff = 90 if theta_best is None else abs(theta - theta_best)
 
         # should be either ~90° or ~270°
         if 88 < diff < 92 or 268 < diff < 272:
@@ -126,6 +126,8 @@ def generate_marker(hough_space, header, corresponding_points):
                 append_line_points(theta, c, lines)
                 found_line_params[get_radius_from_index(c)] = theta
                 line_cnt += 1
+                if theta_best is None:
+                    theta_best = theta
         hough_space[c][r] = 0
 
     if line_cnt == 3:
@@ -171,8 +173,7 @@ def dist(p1, p2):
 
 
 def container_side_detected(length):
-    return length - CONTAINER_LENGTH * EPSILON <= CONTAINER_LENGTH <= length + CONTAINER_LENGTH * EPSILON \
-           or length - CONTAINER_WIDTH * EPSILON <= CONTAINER_WIDTH <= length + CONTAINER_WIDTH * EPSILON
+    return length - CONTAINER_WIDTH * EPSILON <= CONTAINER_WIDTH <= length + CONTAINER_WIDTH * EPSILON
 
 
 def publish_corners(intersections, header):
@@ -196,7 +197,7 @@ def intersection(line1, line2):
     rho2, theta2 = line2
 
     # parallel lines don't intersect
-    if -5 < abs(theta1 - theta2) < 5 or 175 < abs(theta1 - theta2) < 185:
+    if -2 < abs(theta1 - theta2) < 2 or 178 < abs(theta1 - theta2) < 182:
         return
 
     # to radians
@@ -210,10 +211,9 @@ def intersection(line1, line2):
 
 
 def cloud_callback(cloud):
-    rospy.loginfo("receiving cloud..")
-
     global HOUGH_LINE_PUB
 
+    rospy.loginfo("receiving cloud..")
     rospy.loginfo("SEQ: %s", cloud.header.seq)
 
     # convert point cloud to a generator of the individual points (2D)
