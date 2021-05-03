@@ -104,13 +104,18 @@ def reasonable_dist_to_already_detected_lines(point_list, avg_points):
 
 
 def detected_reasonable_line(point_list, theta_best, theta, avg_points):
-    avg_dist, max_dist = compute_avg_and_max_distance(point_list)
+
+    # criteria to determine whether line could be container side
     diff = 90 if theta_best is None else abs(theta - theta_best)
     # should be either ~90° or ~270°
-    orthogonal_to_base = 86 < diff < 94 or 266 < diff < 274
+    orthogonal_to_base = 88 < diff < 92 or 268 < diff < 272
     reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
-    reasonable_len = CONTAINER_LENGTH * 1.5 >= max_dist >= CONTAINER_WIDTH / 2
-    reasonable_avg_distances = CONTAINER_WIDTH >= avg_dist >= 0.1
+
+    # criteria to check whether line is probably something else
+    avg_dist, max_dist = compute_avg_and_max_distance(point_list)
+    reasonable_len = CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON >= max_dist >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON
+    reasonable_avg_distances = CONTAINER_WIDTH >= avg_dist >= 0.5
+
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base
 
 
@@ -118,7 +123,7 @@ def generate_marker(hough_space, header, corresponding_points):
     lines = generate_default_line_marker(header)
     theta_best = None
     line_cnt = 0
-    found_line_params = {}
+    found_line_params = []
     dbg_points = []
     avg_points = []
 
@@ -137,12 +142,12 @@ def generate_marker(hough_space, header, corresponding_points):
 
         if len(point_list) > ACC_THRESHOLD and detected_reasonable_line(point_list, theta_best, theta, avg_points):
             allowed = True
-            for radius in found_line_params:
+            for radius, angle in found_line_params:
                 rad = get_radius_from_index(c)
                 # "equal" radius -> angle has to be different
-                if abs(abs(radius) - abs(rad)) < 0.2:
+                if abs(abs(radius) - abs(rad)) < DELTA_RADIUS * 4:
                     # also equal angle -> forbidden
-                    if abs(theta - found_line_params[radius]) < 60 or 120 < abs(theta - found_line_params[radius]) < 240:
+                    if abs(theta - angle) < 60 or 120 < abs(theta - angle) < 240:
                         allowed = False
                         break
 
@@ -150,8 +155,10 @@ def generate_marker(hough_space, header, corresponding_points):
                 for i in point_list:
                     dbg_points.append(i)
 
+                publish_dgb_points(dbg_points, header)
+
                 append_line_points(theta, c, lines)
-                found_line_params[get_radius_from_index(c)] = theta
+                found_line_params.append((get_radius_from_index(c), theta))
                 line_cnt += 1
 
                 # save avg point for each line
@@ -167,8 +174,8 @@ def generate_marker(hough_space, header, corresponding_points):
     if line_cnt == 3:
         rospy.loginfo("parameters of detected lines: %s", found_line_params)
 
-        radii = [r for r in found_line_params]
-        thetas = [found_line_params[r] for r in radii]
+        radii = [p[0] for p in found_line_params]
+        thetas = [p[1] for p in found_line_params]
 
         intersections = [intersection((radii[0], thetas[0]), (radii[1], thetas[1])),
                          intersection((radii[0], thetas[0]), (radii[2], thetas[2])),
@@ -222,7 +229,7 @@ def publish_dgb_points(dbg, header):
     marker.action = marker.ADD
     marker.pose.orientation.w = 1
     marker.points = dbg
-    marker.scale.x = marker.scale.y = marker.scale.z = 0.2
+    marker.scale.x = marker.scale.y = marker.scale.z = 0.08
     marker.color.a = marker.color.b = marker.color.g = 1.0
 
     DBG_PUB.publish(marker)
