@@ -14,14 +14,14 @@ EPSILON = 0.2
 HOUGH_LINE_PUB = None
 CORNER_PUB = None
 
-DELTA_THETA = 3
+DELTA_THETA = 2
 THETA_MIN = 0
 THETA_MAX = 360
 # should be sufficiently precise to identify reasonable lines
 DELTA_RADIUS = 0.02
 # TODO: check sensor range
-RADIUS_MIN = -20.0
-RADIUS_MAX = 20.0
+RADIUS_MIN = -10.0
+RADIUS_MAX = 10.0
 # TODO: distance to robot pos should be considered for the ACC_THRESH
 ACC_THRESHOLD = 10
 
@@ -75,57 +75,90 @@ def append_line_points(theta, rad_idx, lines):
     lines.points.append(p2)
 
 
-def generate_marker(hough_space, header, corresponding_points):
+def median_filter(points_on_line):
+    # TODO: not really a median filter - just removing far away points
+    median = Point()
+    median.x = np.median(np.sort([p.x for p in points_on_line]))
+    median.y = np.median(np.sort([p.y for p in points_on_line]))
+    res = []
+    for p in points_on_line:
+        if dist(p, median) <= CONTAINER_LENGTH:
+            res.append(p)
+    return res
 
+
+def compute_avg_and_max_distance(point_list):
+    distances = [dist(i, j) for i in point_list for j in point_list if i != j]
+    return np.average(distances), np.max(distances)
+
+
+def reasonable_dist_to_already_detected_lines(point_list, avg_points):
+    avg = Point()
+    avg.x = np.average([p.x for p in point_list])
+    avg.y = np.average([p.y for p in point_list])
+    for p in avg_points:
+        if dist(avg, p) > CONTAINER_LENGTH or dist(avg, p) < CONTAINER_WIDTH / 2:
+            return False
+    return True
+
+
+def detected_reasonable_line(point_list, theta_best, theta, avg_points):
+    avg_dist, max_dist = compute_avg_and_max_distance(point_list)
+    diff = 90 if theta_best is None else abs(theta - theta_best)
+    # should be either ~90° or ~270°
+    orthogonal_to_base = 86 < diff < 94 or 266 < diff < 274
+    reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
+    reasonable_len = CONTAINER_LENGTH * 1.5 >= max_dist >= CONTAINER_WIDTH / 2
+    reasonable_avg_distances = CONTAINER_WIDTH >= avg_dist >= 0.1
+    return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base
+
+
+def generate_marker(hough_space, header, corresponding_points):
     lines = generate_default_line_marker(header)
     theta_best = None
     line_cnt = 0
     found_line_params = {}
-
-    # point_lists.append(np.array(corresponding_points[(c, r)]))
+    dbg_points = []
+    avg_points = []
 
     # container shape -> 3 lines (U-shape)
     while line_cnt < 3:
-
         # no peaks in hough space -> no lines
-        if hough_space.max() <= ACC_THRESHOLD:
+        if hough_space.max() < ACC_THRESHOLD:
             break
 
         c, r = retrieve_best_line(hough_space)
+        # actual points on the line
+        point_list = np.array(corresponding_points[(c, r)])
+        # remove 'outliers'
+        point_list = median_filter(point_list)
         theta = get_theta_from_index(r)
 
-        diff = 90 if theta_best is None else abs(theta - theta_best)
-
-        # should be either ~90° or ~270°
-        if 88 < diff < 92 or 268 < diff < 272:
-
-            # lst = np.array(corresponding_points[(c, r)])
-            # x_vals = np.array([p.x for p in lst])
-            # y_vals = np.array([p.y for p in lst])
-            # x_mean = np.mean(x_vals)
-            # y_mean = np.mean(y_vals)
-
+        if len(point_list) > ACC_THRESHOLD and detected_reasonable_line(point_list, theta_best, theta, avg_points):
             allowed = True
             for radius in found_line_params:
                 rad = get_radius_from_index(c)
-                # equal radius -> angle has to be different
-                if -1 < abs(abs(radius) - abs(rad)) < 1:
+                # "equal" radius -> angle has to be different
+                if abs(abs(radius) - abs(rad)) < 0.2:
                     # also equal angle -> forbidden
-                    if -2 < abs(theta - found_line_params[radius]) < 2 or 178 < abs(
-                            theta - found_line_params[radius]) < 182:
+                    if abs(theta - found_line_params[radius]) < 60 or 120 < abs(theta - found_line_params[radius]) < 240:
                         allowed = False
                         break
 
             if allowed:
-                # TODO: REAL POINTS #############################################
-                # for i in range(len(lst)):
-                #     # only take the points near the mean
-                #     #if abs(lst[i].x - x_mean) < 0.5 and abs(lst[i].y - y_mean) < 0.5:
-                #     lines.points.append(lst[i])
-                #################################################################
+                for i in point_list:
+                    dbg_points.append(i)
+
                 append_line_points(theta, c, lines)
                 found_line_params[get_radius_from_index(c)] = theta
                 line_cnt += 1
+
+                # save avg point for each line
+                avg = Point()
+                avg.x = np.average([p.x for p in point_list])
+                avg.y = np.average([p.y for p in point_list])
+                avg_points.append(avg)
+
                 if theta_best is None:
                     theta_best = theta
         hough_space[c][r] = 0
@@ -162,6 +195,8 @@ def generate_marker(hough_space, header, corresponding_points):
             # reset outdated markers
             publish_corners([], header)
 
+        publish_dgb_points(dbg_points, header)
+
         return lines
 
     rospy.loginfo("NOTHING DETECTED!")
@@ -174,6 +209,22 @@ def dist(p1, p2):
 
 def container_side_detected(length):
     return length - CONTAINER_WIDTH * EPSILON <= CONTAINER_WIDTH <= length + CONTAINER_WIDTH * EPSILON
+
+
+def publish_dgb_points(dbg, header):
+    global CORNER_PUB
+
+    marker = Marker()
+    marker.header = header
+    marker.id = 2
+    marker.type = marker.POINTS
+    marker.action = marker.ADD
+    marker.pose.orientation.w = 1
+    marker.points = dbg
+    marker.scale.x = marker.scale.y = marker.scale.z = 0.2
+    marker.color.a = marker.color.b = marker.color.g = 1.0
+
+    CORNER_PUB.publish(marker)
 
 
 def publish_corners(intersections, header):
