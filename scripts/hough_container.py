@@ -13,6 +13,7 @@ EPSILON = 0.2
 
 HOUGH_LINE_PUB = None
 CORNER_PUB = None
+DBG_PUB = None
 
 DELTA_THETA = 2
 THETA_MIN = 0
@@ -212,11 +213,11 @@ def container_side_detected(length):
 
 
 def publish_dgb_points(dbg, header):
-    global CORNER_PUB
+    global DBG_PUB
 
     marker = Marker()
     marker.header = header
-    marker.id = 2
+    marker.id = 1
     marker.type = marker.POINTS
     marker.action = marker.ADD
     marker.pose.orientation.w = 1
@@ -224,7 +225,7 @@ def publish_dgb_points(dbg, header):
     marker.scale.x = marker.scale.y = marker.scale.z = 0.2
     marker.color.a = marker.color.b = marker.color.g = 1.0
 
-    CORNER_PUB.publish(marker)
+    DBG_PUB.publish(marker)
 
 
 def publish_corners(intersections, header):
@@ -310,11 +311,12 @@ def cloud_callback(cloud):
 
 
 def node():
-    global HOUGH_LINE_PUB, CORNER_PUB
+    global HOUGH_LINE_PUB, CORNER_PUB, DBG_PUB
 
     rospy.init_node('hough_container')
     HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
     CORNER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
+    DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
     rospy.Subscriber("/velodyne_points", PointCloud2, cloud_callback, queue_size=1, buff_size=2 ** 32)
 
     rospy.spin()
