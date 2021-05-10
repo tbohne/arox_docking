@@ -128,7 +128,7 @@ def generate_marker(hough_space, header, corresponding_points):
     avg_points = []
 
     # container shape -> 3 lines (U-shape)
-    while line_cnt < 3:
+    while line_cnt < 4:
         # no peaks in hough space -> no lines
         if hough_space.max() < ACC_THRESHOLD:
             break
@@ -145,7 +145,7 @@ def generate_marker(hough_space, header, corresponding_points):
             for radius, angle in found_line_params:
                 rad = get_radius_from_index(c)
                 # "equal" radius -> angle has to be different
-                if abs(abs(radius) - abs(rad)) < DELTA_RADIUS * 4:
+                if abs(abs(radius) - abs(rad)) < DELTA_RADIUS * 10:
                     # also equal angle -> forbidden
                     if abs(theta - angle) < 60 or 120 < abs(theta - angle) < 240:
                         allowed = False
@@ -171,26 +171,24 @@ def generate_marker(hough_space, header, corresponding_points):
                     theta_best = theta
         hough_space[c][r] = 0
 
-    if line_cnt == 3:
+    if line_cnt >= 3:
         rospy.loginfo("parameters of detected lines: %s", found_line_params)
 
         radii = [p[0] for p in found_line_params]
         thetas = [p[1] for p in found_line_params]
 
-        intersections = [intersection((radii[0], thetas[0]), (radii[1], thetas[1])),
-                         intersection((radii[0], thetas[0]), (radii[2], thetas[2])),
-                         intersection((radii[1], thetas[1]), (radii[2], thetas[2]))]
-
-        intersection_points = []
-        for inter in intersections:
-            if inter:
-                p = Point()
-                p.x, p.y = inter
-                intersection_points.append(p)
+        intersections = []
+        for i in range(len(radii)):
+            for j in range(i + 1, len(radii)):
+                inter = intersection((radii[i], thetas[i]), (radii[j], thetas[j]))
+                if inter:
+                    p = Point()
+                    p.x, p.y = inter
+                    intersections.append(p)
 
         container_corners = []
-        for p in intersection_points:
-            for j in intersection_points:
+        for p in intersections:
+            for j in intersections:
                 if p != j:
                     d = dist(p, j)
                     if container_side_detected(d):
