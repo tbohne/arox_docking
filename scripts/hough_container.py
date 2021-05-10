@@ -109,10 +109,10 @@ def detected_reasonable_line(point_list, theta_best, theta, avg_points):
     # should be either ~90° or ~270° if base is entry
     # (base is not necessarily the entry of the container -> ~0 and ~180 ok as well)
     orthogonal_to_base = diff < 2 or 88 < diff < 92 or 178 < diff < 182 or 268 < diff < 272
-    reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
 
     # criteria to check whether line is probably something else
     avg_dist, max_dist = compute_avg_and_max_distance(point_list)
+    reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
     reasonable_len = CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON >= max_dist >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON
     reasonable_avg_distances = CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
 
@@ -197,16 +197,13 @@ def generate_marker(hough_space, header, corresponding_points):
 
         if len(container_corners) > 0:
             publish_corners(container_corners, header)
-        else:
-            # reset outdated markers
-            publish_corners([], header)
-
-        publish_dgb_points(dbg_points, header)
 
         return lines
 
+    # reset outdated markers
+    publish_corners([], header)
     rospy.loginfo("NOTHING DETECTED!")
-    return None
+    return generate_default_line_marker(header)
 
 
 def dist(p1, p2):
@@ -310,9 +307,8 @@ def cloud_callback(cloud):
                 corresponding_points[(r_idx, theta_idx)].append(p)
 
     lines = generate_marker(hough_space, cloud.header, corresponding_points)
-    if lines is not None:
-        rospy.loginfo(cloud.header)
-        HOUGH_LINE_PUB.publish(lines)
+    rospy.loginfo(cloud.header)
+    HOUGH_LINE_PUB.publish(lines)
 
 
 def node():
