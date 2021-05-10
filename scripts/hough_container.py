@@ -19,7 +19,7 @@ DELTA_THETA = 2
 THETA_MIN = 0
 THETA_MAX = 360
 # should be sufficiently precise to identify reasonable lines
-DELTA_RADIUS = 0.02
+DELTA_RADIUS = 0.01
 # TODO: check sensor range
 RADIUS_MIN = -10.0
 RADIUS_MAX = 10.0
@@ -104,17 +104,17 @@ def reasonable_dist_to_already_detected_lines(point_list, avg_points):
 
 
 def detected_reasonable_line(point_list, theta_best, theta, avg_points):
-
     # criteria to determine whether line could be container side
     diff = 90 if theta_best is None else abs(theta - theta_best)
-    # should be either ~90° or ~270°
-    orthogonal_to_base = 88 < diff < 92 or 268 < diff < 272
+    # should be either ~90° or ~270° if base is entry
+    # (base is not necessarily the entry of the container -> ~0 and ~180 ok as well)
+    orthogonal_to_base = diff < 2 or 88 < diff < 92 or 178 < diff < 182 or 268 < diff < 272
     reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
 
     # criteria to check whether line is probably something else
     avg_dist, max_dist = compute_avg_and_max_distance(point_list)
     reasonable_len = CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON >= max_dist >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON
-    reasonable_avg_distances = CONTAINER_WIDTH >= avg_dist >= 0.5
+    reasonable_avg_distances = CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
 
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base
 
