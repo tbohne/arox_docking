@@ -119,6 +119,22 @@ def detected_reasonable_line(point_list, theta_best, theta, avg_points):
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base
 
 
+def compute_intersection_points(found_line_params):
+    radii = [p[0] for p in found_line_params]
+    thetas = [p[1] for p in found_line_params]
+
+    intersections = []
+    for i in range(len(radii)):
+        for j in range(i + 1, len(radii)):
+            inter = intersection((radii[i], thetas[i]), (radii[j], thetas[j]))
+            if inter:
+                p = Point()
+                p.x, p.y = inter
+                intersections.append(p)
+
+    return intersections
+
+
 def generate_marker(hough_space, header, corresponding_points):
     lines = generate_default_line_marker(header)
     theta_best = None
@@ -152,39 +168,44 @@ def generate_marker(hough_space, header, corresponding_points):
                         break
 
             if allowed:
-                for i in point_list:
-                    dbg_points.append(i)
+                # check intersections
+                tmp = found_line_params.copy()
+                tmp.append((get_radius_from_index(c), theta))
+                intersections = compute_intersection_points(tmp)
+                for p in intersections:
+                    for j in intersections:
+                        if p != j:
+                            d = dist(p, j)
+                            width_eps = CONTAINER_WIDTH * EPSILON
+                            length_eps = CONTAINER_LENGTH * EPSILON
+                            tolerated_width = CONTAINER_WIDTH - width_eps < d < CONTAINER_WIDTH + width_eps
+                            tolerated_length = CONTAINER_LENGTH - length_eps < d < CONTAINER_LENGTH + length_eps
+                            if not tolerated_width and not tolerated_length:
+                                allowed = False
+                if allowed:
+                    for i in point_list:
+                        dbg_points.append(i)
+                    publish_dgb_points(dbg_points, header)
 
-                publish_dgb_points(dbg_points, header)
+                    append_line_points(theta, c, lines)
+                    found_line_params.append((get_radius_from_index(c), theta))
+                    line_cnt += 1
 
-                append_line_points(theta, c, lines)
-                found_line_params.append((get_radius_from_index(c), theta))
-                line_cnt += 1
+                    # save avg point for each line
+                    avg = Point()
+                    avg.x = np.average([p.x for p in point_list])
+                    avg.y = np.average([p.y for p in point_list])
+                    avg_points.append(avg)
 
-                # save avg point for each line
-                avg = Point()
-                avg.x = np.average([p.x for p in point_list])
-                avg.y = np.average([p.y for p in point_list])
-                avg_points.append(avg)
+                    if theta_best is None:
+                        theta_best = theta
 
-                if theta_best is None:
-                    theta_best = theta
         hough_space[c][r] = 0
 
     if line_cnt >= 3:
         rospy.loginfo("parameters of detected lines: %s", found_line_params)
 
-        radii = [p[0] for p in found_line_params]
-        thetas = [p[1] for p in found_line_params]
-
-        intersections = []
-        for i in range(len(radii)):
-            for j in range(i + 1, len(radii)):
-                inter = intersection((radii[i], thetas[i]), (radii[j], thetas[j]))
-                if inter:
-                    p = Point()
-                    p.x, p.y = inter
-                    intersections.append(p)
+        intersections = compute_intersection_points(found_line_params)
 
         container_corners = []
         for p in intersections:
@@ -196,6 +217,11 @@ def generate_marker(hough_space, header, corresponding_points):
                         container_corners.append(p)
 
         if len(container_corners) > 0:
+            if len(container_corners) == 4:
+                rospy.loginfo("CONTAINER DETECTED!")
+            elif len(container_corners) >= 2:
+                rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
+
             publish_corners(container_corners, header)
 
         return lines
