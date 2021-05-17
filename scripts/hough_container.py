@@ -116,9 +116,9 @@ def detected_reasonable_line(point_list, theta_best, theta, avg_points):
     reasonable_len = CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON >= max_dist >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON
     reasonable_avg_distances = CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
 
-    # TODO: jump filter no_jumps = True#detect_jumps(point_list)
+    no_jumps = True#detect_jumps(point_list)
 
-    return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base# and no_jumps
+    return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and no_jumps
 
 
 def compute_intersection_points(found_line_params):
@@ -145,11 +145,21 @@ def update_avg(avg_points, point_list):
     avg_points.append(avg)
 
 
+def already_tested_base_line(tested_base_lines, rad, theta):
+    for r, t in tested_base_lines:
+        diff_r = abs(abs(rad) - abs(r))
+        diff_t = abs(abs(theta) - abs(t))
+        if diff_r < DELTA_RADIUS * 10 and diff_t < 60:
+            return True
+    return False
+
+
 def generate_marker(hough_space, header, corresponding_points):
-
     base_lines_tested = 0
+    base_attempts = 0
+    tested_base_lines = []
 
-    while hough_space.max() > ACC_THRESHOLD and base_lines_tested < 10:
+    while hough_space.max() > ACC_THRESHOLD and base_lines_tested < 10 and base_attempts < 150:
         lines = generate_default_line_marker(header)
         rospy.loginfo("Testing new base line with %s points", hough_space.max())
         # base line parameters
@@ -157,15 +167,19 @@ def generate_marker(hough_space, header, corresponding_points):
         point_list = median_filter(np.array(corresponding_points[(c, r)]))
         theta_best = get_theta_from_index(r)
         dbg_points = []
+        already_tested = already_tested_base_line(tested_base_lines, get_radius_from_index(c), theta_best)
 
-        if len(point_list) <= ACC_THRESHOLD or not detected_reasonable_line(point_list, None, theta_best, []):
+        if already_tested or len(point_list) <= ACC_THRESHOLD or not detected_reasonable_line(point_list, None, theta_best, []):
             hough_space[c][r] = 0
+            base_attempts += 1
+            rospy.loginfo("base attempt: %s", base_attempts)
             continue
 
-        append_line_points(theta_best, c, lines)
         for i in point_list:
             dbg_points.append(i)
         publish_dgb_points(dbg_points, header)
+
+        append_line_points(theta_best, c, lines)
         line_cnt = 1
         found_line_params = [(get_radius_from_index(c), theta_best)]
         avg_points = []
@@ -173,6 +187,7 @@ def generate_marker(hough_space, header, corresponding_points):
         hough_space[c][r] = 0
         hough_copy = hough_space.copy()
         base_lines_tested += 1
+        tested_base_lines.append((get_radius_from_index(c), theta_best))
 
         # detect remaining 2-3 sides
         while line_cnt < 4 and hough_copy.max() > ACC_THRESHOLD:
@@ -186,7 +201,7 @@ def generate_marker(hough_space, header, corresponding_points):
                 for radius, angle in found_line_params:
                     rad = get_radius_from_index(c)
                     # "equal" radius -> angle has to be different
-                    if abs(abs(radius) - abs(rad)) < DELTA_RADIUS * 5:
+                    if abs(abs(radius) - abs(rad)) < DELTA_RADIUS * 10:
                         # angle too close -> forbidden
                         if abs(theta - angle) < 60 or 120 < abs(theta - angle) < 240:
                             allowed = False
