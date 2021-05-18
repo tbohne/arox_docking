@@ -103,6 +103,22 @@ def reasonable_dist_to_already_detected_lines(point_list, avg_points):
     return True
 
 
+def detect_jumps(points_on_line):
+    x_vals = sorted([p.x for p in points_on_line])
+    y_vals = sorted([p.y for p in points_on_line])
+
+    jump_cnt = 0
+    for i in range(len(x_vals) - 1):
+        x_dist = abs(abs(x_vals[i]) - abs(x_vals[i + 1]))
+        y_dist = abs(abs(y_vals[i]) - abs(y_vals[i + 1]))
+        rospy.loginfo("X_DIST: %s", x_dist)
+        if x_dist > 2 or y_dist > 2:
+            return True
+        if x_dist > 1 or y_dist > 1:
+            jump_cnt += 1
+    return jump_cnt >= 3
+
+
 def detected_reasonable_line(point_list, theta_best, theta, avg_points):
     # criteria to determine whether line could be container side
     diff = 90 if theta_best is None else abs(theta - theta_best)
@@ -115,10 +131,9 @@ def detected_reasonable_line(point_list, theta_best, theta, avg_points):
     reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
     reasonable_len = CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON >= max_dist >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON
     reasonable_avg_distances = CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
+    jumps = detect_jumps(point_list)
 
-    no_jumps = True#detect_jumps(point_list)
-
-    return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and no_jumps
+    return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and not jumps
 
 
 def compute_intersection_points(found_line_params):

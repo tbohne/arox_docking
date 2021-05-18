@@ -161,7 +161,7 @@ include_directories(
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(
     PROGRAMS
-    scripts/hough_container.py
+    scripts/detect_container_entry.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
