@@ -17,7 +17,7 @@ DBG_PUB = None
 
 DELTA_THETA = 2
 THETA_MIN = 0
-THETA_MAX = 360
+THETA_MAX = 180
 # should be sufficiently precise to identify reasonable lines
 DELTA_RADIUS = 0.01
 # TODO: check sensor range
@@ -131,7 +131,7 @@ def detected_reasonable_line(point_list, theta_best, theta, avg_points):
     reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
     reasonable_len = CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON >= max_dist >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON
     reasonable_avg_distances = CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
-    jumps = detect_jumps(point_list)
+    jumps = False#detect_jumps(point_list)
 
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and not jumps
 
