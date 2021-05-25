@@ -3,6 +3,7 @@ import rospy
 import math
 import numpy as np
 from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import LaserScan
 from sensor_msgs import point_cloud2
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
@@ -21,12 +22,12 @@ DELTA_THETA = 2
 THETA_MIN = 0
 THETA_MAX = 180
 # should be sufficiently precise to identify reasonable lines
-DELTA_RADIUS = 0.01
+DELTA_RADIUS = 0.02
 # TODO: check sensor range
 RADIUS_MIN = -10.0
 RADIUS_MAX = 10.0
 # TODO: distance to robot pos should be considered for the ACC_THRESH
-ACC_THRESHOLD = 10
+ACC_THRESHOLD = 5
 
 
 def generate_default_line_marker(header):
@@ -242,6 +243,7 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points):
     reasonable_len = tolerated_length >= max_dist >= tolerated_width
     reasonable_avg_distances = CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
     jumps = False  # detect_jumps(point_list)
+
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and not jumps
 
 
@@ -444,7 +446,7 @@ def detect_container(hough_space, header, corresponding_points):
     base_attempts = 0
     tested_base_lines = []
 
-    while hough_space.max() > ACC_THRESHOLD and base_lines_tested < 10 and base_attempts < 150:
+    while hough_space.max() > ACC_THRESHOLD and base_lines_tested < 10 and base_attempts < 50:
         DBG_POINTS = []
         lines = generate_default_line_marker(header)
         rospy.loginfo("testing new base line with %s points", hough_space.max())
@@ -498,26 +500,41 @@ def detect_container(hough_space, header, corresponding_points):
     return generate_default_line_marker(header)
 
 
-def cloud_callback(cloud):
+def get_points_from_scan(scan):
     """
-    Is called whenever a new point cloud arrives.
-    Computes the 2D hough transform of the point cloud (x, y) and initiates the container detection.
+    Retrieves the points from the specified laser scan.
 
-    :param cloud: point cloud to detect container in
+    :param scan: laser scan to retrieve points from
+    :return: points from scan
+    """
+    points = []
+    for index, point in enumerate(scan.ranges):
+        if point < scan.range_min or point >= scan.range_max:
+            continue
+        # transform points from polar to cartesian coordinates
+        x = point * np.cos(scan.angle_min + index * scan.angle_increment)
+        y = point * np.sin(scan.angle_min + index * scan.angle_increment)
+        points.append((x, y))
+    return points
+
+
+def scan_callback(scan):
+    """
+    Is called whenever a new laser scan arrives.
+    Computes the 2D hough transform of the laser scan and initiates the container detection.
+
+    :param scan: laser scan to detect container in
     """
     global HOUGH_LINE_PUB
-    rospy.loginfo("receiving cloud..")
-    rospy.loginfo("seq: %s", cloud.header.seq)
 
-    # convert point cloud to a generator of the individual points (2D)
-    point_generator = point_cloud2.read_points(cloud, field_names=("x", "y"))
+    rospy.loginfo("receiving laser scan..")
+    rospy.loginfo("seq: %s", scan.header.seq)
+
     theta_values = np.deg2rad(np.arange(THETA_MIN, THETA_MAX, DELTA_THETA, dtype=np.double))
     r_values = np.arange(RADIUS_MIN, RADIUS_MAX, DELTA_RADIUS, dtype=np.double)
-
     # precompute sines and cosines
     cosines = np.cos(theta_values)
     sines = np.sin(theta_values)
-
     # define discrete hough space
     hough_space = np.zeros([len(r_values), len(theta_values)], dtype=int)
 
@@ -528,7 +545,7 @@ def cloud_callback(cloud):
             corresponding_points[(r, theta)] = []
 
     # compute hough space
-    for p_idx, (x, y) in enumerate(point_generator):
+    for p_idx, (x, y) in enumerate(get_points_from_scan(scan)):
         if not np.isnan(x) and not np.isnan(y):
             for theta_idx, (cos_theta, sin_theta) in enumerate(zip(cosines, sines)):
                 r = x * cos_theta + y * sin_theta
@@ -541,8 +558,8 @@ def cloud_callback(cloud):
                 p.y = y
                 corresponding_points[(r_idx, theta_idx)].append(p)
 
-    lines = detect_container(hough_space, cloud.header, corresponding_points)
-    rospy.loginfo(cloud.header)
+    lines = detect_container(hough_space, scan.header, corresponding_points)
+    rospy.loginfo(scan.header)
     HOUGH_LINE_PUB.publish(lines)
 
 
@@ -556,7 +573,8 @@ def node():
     HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
     CORNER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
     DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
-    rospy.Subscriber("/velodyne_points", PointCloud2, cloud_callback, queue_size=1, buff_size=2 ** 32)
+    # subscribing to the scan that is the result of 'pointcloud_to_laserscan'
+    rospy.Subscriber("/scan_velodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
 
     rospy.spin()
 
