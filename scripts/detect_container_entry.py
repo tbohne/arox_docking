@@ -2,9 +2,7 @@
 import rospy
 import math
 import numpy as np
-from sensor_msgs.msg import PointCloud2
 from sensor_msgs.msg import LaserScan
-from sensor_msgs import point_cloud2
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 
@@ -14,6 +12,7 @@ EPSILON = 0.2
 
 HOUGH_LINE_PUB = None
 CORNER_PUB = None
+ENTRY_PUB = None
 DBG_PUB = None
 
 DBG_POINTS = []
@@ -87,6 +86,27 @@ def publish_corners(intersections, header):
     marker.scale.x = marker.scale.y = marker.scale.z = 0.4
     marker.color.a = marker.color.b = 1.0
     CORNER_PUB.publish(marker)
+
+
+def publish_container_entry(entry, header):
+    """
+    Publishes the position in front of the container entry where the robot should move to.
+    TODO: Could be an arrow pointing towards the container entry
+
+    :param entry: position in front of the container entry
+    :param header: laser scan header
+    """
+    global ENTRY_PUB
+    marker = Marker()
+    marker.header = header
+    marker.id = 1
+    marker.type = marker.POINTS
+    marker.action = marker.ADD
+    marker.pose.orientation.w = 1
+    marker.points = entry
+    marker.scale.x = marker.scale.y = marker.scale.z = 0.4
+    marker.color.a = marker.color.g = marker.color.r = 1.0
+    ENTRY_PUB.publish(marker)
 
 
 def get_theta_by_index(idx):
@@ -414,20 +434,57 @@ def retrieve_container_corners(found_line_params):
     return container_corners
 
 
-def publish_detected_container(found_line_params, header):
+def determine_container_entry(corners, avg_points):
     """
-    Publishes the detected corners of the container.
+    Determines the container entry based on the detected corners and the average line points.
+
+    :param corners: detected container corners
+    :param avg_points: average points representing detected lines
+    :return: container entry
+    """
+    base_point = Point()
+    base_point.x = (corners[0].x + corners[1].x) / 2
+    base_point.y = (corners[0].y + corners[1].y) / 2
+
+    direction_vector = (corners[1].x - corners[0].x, corners[1].y - corners[0].y)
+    length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
+    res_vec = (direction_vector[0] / length, direction_vector[1] / length)
+
+    distance = 1
+    entry_candidate_one = Point()
+    entry_candidate_one.x = base_point.x - res_vec[1] * distance
+    entry_candidate_one.y = base_point.y + res_vec[0] * distance
+    entry_candidate_two = Point()
+    entry_candidate_two.x = base_point.x + res_vec[1] * distance
+    entry_candidate_two.y = base_point.y - res_vec[0] * distance
+
+    # the one further away from the averages is the position to move to
+    avg_entry_candidate_one = np.average([dist(entry_candidate_one, p) for p in avg_points])
+    avg_entry_candidate_two = np.average([dist(entry_candidate_two, p) for p in avg_points])
+    if avg_entry_candidate_one > avg_entry_candidate_two:
+        return entry_candidate_one
+    return entry_candidate_two
+
+
+def publish_detected_container(found_line_params, header, avg_points):
+    """
+    Publishes the detected corners of the container as well as its entry point.
 
     :param found_line_params: parameters of detected lines
     :param header: point cloud header
+    :param avg_points: average points representing detected lines
     """
     rospy.loginfo("parameters of detected lines: %s", found_line_params)
     container_corners = retrieve_container_corners(found_line_params)
     if len(container_corners) > 0:
         if len(container_corners) == 4:
             rospy.loginfo("CONTAINER DETECTED!")
+            # TODO: think about reasonable way to determine entry (distinguish front / back)
         elif len(container_corners) >= 2:
             rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
+            # publish container entry
+            container_entry = determine_container_entry(container_corners, avg_points)
+            publish_container_entry([container_entry], header)
         publish_corners(container_corners, header)
 
 
@@ -491,7 +548,7 @@ def detect_container(hough_space, header, corresponding_points):
             hough_copy[c][r] = 0
 
         if len(found_line_params) >= 3:
-            publish_detected_container(found_line_params, header)
+            publish_detected_container(found_line_params, header, avg_points)
             return lines
 
     # reset outdated markers
@@ -567,11 +624,12 @@ def node():
     """
     Node to detect the container entry in a point cloud.
     """
-    global HOUGH_LINE_PUB, CORNER_PUB, DBG_PUB
+    global HOUGH_LINE_PUB, CORNER_PUB, DBG_PUB, ENTRY_PUB
 
     rospy.init_node('detect_container_entry')
     HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
     CORNER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
+    ENTRY_PUB = rospy.Publisher("/entry_point", Marker, queue_size=1)
     DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
     # subscribing to the scan that is the result of 'pointcloud_to_laserscan'
     rospy.Subscriber("/scan_velodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
