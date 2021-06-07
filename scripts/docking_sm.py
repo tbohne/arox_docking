@@ -76,40 +76,44 @@ class Dock(smach.State):
         return 'succeeded'
 
 
+class DockingStateMachine(smach.StateMachine):
+    def __init__(self):
+        super(DockingStateMachine, self).__init__(outcomes=['failed', 'docked'])
+        with self:
+            # add states
+            self.add('CONTAINER_PROXIMITY', ContainerProximity(), transitions={
+                'succeeded': 'DETECT_CONTAINER',
+                'aborted': 'failed'})
+
+            self.add('DETECT_CONTAINER', DetectContainer(), transitions={
+                'succeeded': 'ALIGN_ROBOT_TO_RAMP',
+                'aborted': 'failed'})
+
+            self.add('ALIGN_ROBOT_TO_RAMP', AlignRobotToRamp(), transitions={
+                'succeeded': 'DRIVE_INTO_CONTAINER',
+                'aborted': 'failed'})
+
+            self.add('DRIVE_INTO_CONTAINER', DriveIntoContainer(), transitions={
+                'succeeded': 'LOCALIZE_CHARGING_STATION',
+                'aborted': 'failed'})
+
+            self.add('LOCALIZE_CHARGING_STATION', LocalizeChargingStation(), transitions={
+                'succeeded': 'ALIGN_ROBOT_TO_CHARGING_STATION',
+                'aborted': 'failed'})
+
+            self.add('ALIGN_ROBOT_TO_CHARGING_STATION', AlignRobotToChargingStation(), transitions={
+                'succeeded': 'DOCK',
+                'aborted': 'failed'})
+
+            self.add('DOCK', Dock(), transitions={
+                'succeeded': 'docked',
+                'aborted': 'failed'})
+
+
 def main():
     rospy.init_node('docking_smach')
 
-    sm = smach.StateMachine(outcomes=['failed', 'docked'])
-
-    with sm:
-        # add states
-        smach.StateMachine.add('CONTAINER_PROXIMITY', ContainerProximity(), transitions={
-            'succeeded': 'DETECT_CONTAINER',
-            'aborted': 'failed'})
-
-        smach.StateMachine.add('DETECT_CONTAINER', DetectContainer(), transitions={
-            'succeeded': 'ALIGN_ROBOT_TO_RAMP',
-            'aborted': 'failed'})
-
-        smach.StateMachine.add('ALIGN_ROBOT_TO_RAMP', AlignRobotToRamp(), transitions={
-            'succeeded': 'DRIVE_INTO_CONTAINER',
-            'aborted': 'failed'})
-
-        smach.StateMachine.add('DRIVE_INTO_CONTAINER', DriveIntoContainer(), transitions={
-            'succeeded': 'LOCALIZE_CHARGING_STATION',
-            'aborted': 'failed'})
-
-        smach.StateMachine.add('LOCALIZE_CHARGING_STATION', LocalizeChargingStation(), transitions={
-            'succeeded': 'ALIGN_ROBOT_TO_CHARGING_STATION',
-            'aborted': 'failed'})
-
-        smach.StateMachine.add('ALIGN_ROBOT_TO_CHARGING_STATION', AlignRobotToChargingStation(), transitions={
-            'succeeded': 'DOCK',
-            'aborted': 'failed'})
-
-        smach.StateMachine.add('DOCK', Dock(), transitions={
-            'succeeded': 'docked',
-            'aborted': 'failed'})
+    sm = DockingStateMachine()
 
     # execute SMACH
     outcome = sm.execute()
