@@ -4,7 +4,7 @@ import math
 import numpy as np
 from sensor_msgs.msg import LaserScan
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, PoseStamped
 
 CONTAINER_WIDTH = 2.83
 CONTAINER_LENGTH = 3.7
@@ -12,8 +12,9 @@ EPSILON = 0.2
 
 HOUGH_LINE_PUB = None
 CORNER_PUB = None
-ENTRY_PUB = None
+ENTRY_MARKER_PUB = None
 DBG_PUB = None
+ENTRY_PUB = None
 
 DBG_POINTS = []
 
@@ -96,7 +97,7 @@ def publish_container_entry(entry, header):
     :param entry: position in front of the container entry
     :param header: laser scan header
     """
-    global ENTRY_PUB
+    global ENTRY_MARKER_PUB
     marker = Marker()
     marker.header = header
     marker.id = 1
@@ -106,7 +107,7 @@ def publish_container_entry(entry, header):
     marker.points = entry
     marker.scale.x = marker.scale.y = marker.scale.z = 0.4
     marker.color.a = marker.color.g = marker.color.r = 1.0
-    ENTRY_PUB.publish(marker)
+    ENTRY_MARKER_PUB.publish(marker)
 
 
 def get_theta_by_index(idx):
@@ -474,17 +475,30 @@ def publish_detected_container(found_line_params, header, avg_points):
     :param header: point cloud header
     :param avg_points: average points representing detected lines
     """
-    rospy.loginfo("parameters of detected lines: %s", found_line_params)
+    global ENTRY_PUB
+    # rospy.loginfo("parameters of detected lines: %s", found_line_params)
     container_corners = retrieve_container_corners(found_line_params)
     if len(container_corners) > 0:
         if len(container_corners) == 4:
-            rospy.loginfo("CONTAINER DETECTED!")
+            pass
+            # rospy.loginfo("CONTAINER DETECTED!")
             # TODO: think about reasonable way to determine entry (distinguish front / back)
         elif len(container_corners) >= 2:
-            rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
+            # rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
             # publish container entry
             container_entry = determine_container_entry(container_corners, avg_points)
             publish_container_entry([container_entry], header)
+
+            goal = PoseStamped()
+            goal.header.frame_id = "map"
+            goal.header.stamp = rospy.Time.now()
+            goal.pose.position.x = container_entry.x
+            goal.pose.position.y = container_entry.y
+            goal.pose.position.z = 0.0
+            goal.pose.orientation.w = 1.0
+            rospy.loginfo("PUBLISHING ENTRY POINT")
+            ENTRY_PUB.publish(goal)
+
         publish_corners(container_corners, header)
 
 
@@ -506,7 +520,7 @@ def detect_container(hough_space, header, corresponding_points):
     while hough_space.max() > ACC_THRESHOLD and base_lines_tested < 10 and base_attempts < 50:
         DBG_POINTS = []
         lines = generate_default_line_marker(header)
-        rospy.loginfo("testing new base line with %s points", hough_space.max())
+        # rospy.loginfo("testing new base line with %s points", hough_space.max())
         # base line parameters
         c, r = retrieve_best_line(hough_space)
         point_list = median_filter(np.array(corresponding_points[(c, r)]))
@@ -518,7 +532,7 @@ def detect_container(hough_space, header, corresponding_points):
         if already_tested or len(point_list) <= ACC_THRESHOLD or not reasonable_line:
             hough_space[c][r] = 0
             base_attempts += 1
-            rospy.loginfo("base attempt: %s", base_attempts)
+            # rospy.loginfo("base attempt: %s", base_attempts)
             continue
 
         # visualize base line
@@ -553,7 +567,7 @@ def detect_container(hough_space, header, corresponding_points):
 
     # reset outdated markers
     publish_corners([], header)
-    rospy.loginfo("NOTHING DETECTED!")
+    # rospy.loginfo("NOTHING DETECTED!")
     return generate_default_line_marker(header)
 
 
@@ -584,8 +598,8 @@ def scan_callback(scan):
     """
     global HOUGH_LINE_PUB
 
-    rospy.loginfo("receiving laser scan..")
-    rospy.loginfo("seq: %s", scan.header.seq)
+    # rospy.loginfo("receiving laser scan..")
+    # rospy.loginfo("seq: %s", scan.header.seq)
 
     theta_values = np.deg2rad(np.arange(THETA_MIN, THETA_MAX, DELTA_THETA, dtype=np.double))
     r_values = np.arange(RADIUS_MIN, RADIUS_MAX, DELTA_RADIUS, dtype=np.double)
@@ -616,7 +630,7 @@ def scan_callback(scan):
                 corresponding_points[(r_idx, theta_idx)].append(p)
 
     lines = detect_container(hough_space, scan.header, corresponding_points)
-    rospy.loginfo(scan.header)
+    # rospy.loginfo(scan.header)
     HOUGH_LINE_PUB.publish(lines)
 
 
@@ -624,15 +638,16 @@ def node():
     """
     Node to detect the container entry in a point cloud.
     """
-    global HOUGH_LINE_PUB, CORNER_PUB, DBG_PUB, ENTRY_PUB
+    global HOUGH_LINE_PUB, CORNER_PUB, DBG_PUB, ENTRY_MARKER_PUB, ENTRY_PUB
 
     rospy.init_node('detect_container_entry')
     HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
     CORNER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
-    ENTRY_PUB = rospy.Publisher("/entry_point", Marker, queue_size=1)
+    ENTRY_MARKER_PUB = rospy.Publisher("/entry_point", Marker, queue_size=1)
     DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
+    ENTRY_PUB = rospy.Publisher("/container_entry", PoseStamped, queue_size=1)
     # subscribing to the scan that is the result of 'pointcloud_to_laserscan'
-    rospy.Subscriber("/scan_velodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
+    rospy.Subscriber("/scanVelodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
 
     rospy.spin()
 
