@@ -4,6 +4,8 @@ import rospy
 import smach
 import smach_ros
 
+from arox_docking.msg import DockAction
+
 
 # initial state
 class ContainerProximity(smach.State):
@@ -78,7 +80,12 @@ class Dock(smach.State):
 
 class DockingStateMachine(smach.StateMachine):
     def __init__(self):
-        super(DockingStateMachine, self).__init__(outcomes=['failed', 'docked'])
+        super(DockingStateMachine, self).__init__(
+            outcomes=['failed', 'docked'],
+            input_keys=['custom_goal'],
+            output_keys=[]
+        )
+
         with self:
             # add states
             self.add('CONTAINER_PROXIMITY', ContainerProximity(), transitions={
@@ -115,9 +122,22 @@ def main():
 
     sm = DockingStateMachine()
 
-    # execute SMACH
-    outcome = sm.execute()
-    rospy.loginfo("docking outcome: %s", outcome)
+    # construct action server wrapper
+    asw = smach_ros.ActionServerWrapper(
+        'dock_to_charging_station', DockAction,
+        wrapped_container=sm,
+        succeeded_outcomes=['docked'],
+        aborted_outcomes=['aborted'],
+        goal_key='custom_goal',
+        # result_key='result'
+    )
+
+    rospy.loginfo("running action server wrapper..")
+
+    # run the server in a background thread
+    asw.run_server()
+
+    rospy.spin()
 
 
 if __name__ == '__main__':

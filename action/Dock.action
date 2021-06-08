@@ -1,9 +1,8 @@
 #goal
-int64 max_number
-float64 wait_duration
+string goal
 ---
 #result
-int64 count
+string success
 ---
 #feedback
 float64 percentage
