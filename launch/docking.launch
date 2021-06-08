@@ -4,7 +4,7 @@
 
   <node pkg="arox_docking" type="detect_container_entry.py" name="arox_docking" respawn="true" output="screen"></node>
 
-  <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="pointcloud_to_laserscan" respawn="true" output="screen">
+  <!-- <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="pointcloud_to_laserscan">
     <rosparam>
       target_frame: base_link
       transform_tolerance: 0.01
@@ -24,6 +24,6 @@
 
     <remap from="scan" to="scan_velodyne" />
     <remap from="cloud_in" to="velodyne_points" />
-  </node>
+  </node> -->
 
 </launch>
