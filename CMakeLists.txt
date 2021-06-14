@@ -165,6 +165,7 @@ catkin_install_python(
     PROGRAMS
     scripts/detect_container_entry.py
     scripts/docking_sm.py
+    scripts/start_smach.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

@@ -19,6 +19,11 @@ def start_smach():
     success = smach_client.wait_for_result()
     rospy.loginfo("SMACH execution terminated successfully: %s", success)
 
+    rospy.spin()
+
 
 if __name__ == '__main__':
-    start_smach()
+    try:
+        start_smach()
+    except rospy.ROSInterruptException:
+        pass
