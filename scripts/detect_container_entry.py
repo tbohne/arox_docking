@@ -89,17 +89,16 @@ def publish_corners(intersections, header):
     CORNER_PUB.publish(marker)
 
 
-def publish_container_entry(entry, header):
+def publish_container_entry(entry):
     """
     Publishes the position in front of the container entry where the robot should move to.
     TODO: Could be an arrow pointing towards the container entry
 
     :param entry: position in front of the container entry
-    :param header: laser scan header
     """
     global ENTRY_MARKER_PUB
     marker = Marker()
-    marker.header = header
+    marker.header.frame_id = "base_link"
     marker.id = 1
     marker.type = marker.POINTS
     marker.action = marker.ADD
@@ -487,14 +486,17 @@ def publish_detected_container(found_line_params, header, avg_points):
             # rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
             # publish container entry
             container_entry = determine_container_entry(container_corners, avg_points)
-            publish_container_entry([container_entry], header)
+            publish_container_entry([container_entry])
 
             goal = PoseStamped()
-            goal.header.frame_id = "map"
+            goal.header.frame_id = "base_link"
             goal.header.stamp = rospy.Time.now()
             goal.pose.position.x = container_entry.x
             goal.pose.position.y = container_entry.y
             goal.pose.position.z = 0.0
+            goal.pose.orientation.x = 0.0
+            goal.pose.orientation.y = 0.0
+            goal.pose.orientation.z = 0.0
             goal.pose.orientation.w = 1.0
             rospy.loginfo("PUBLISHING ENTRY POINT")
             ENTRY_PUB.publish(goal)

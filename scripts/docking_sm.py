@@ -5,9 +5,14 @@ import smach
 import smach_ros
 import actionlib
 
+import tf2_ros
+import tf2_geometry_msgs
+
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal, MoveBaseActionGoal
 from geometry_msgs.msg import PoseStamped
 from arox_docking.msg import DockAction
+
+TF_BUFFER = None
 
 
 # initial state
@@ -51,20 +56,23 @@ class AlignRobotToRamp(smach.State):
                              input_keys=['align_robot_to_ramp_input'],
                              output_keys=['align_robot_to_ramp_output'])
 
-    @staticmethod
-    def execute(userdata):
+    def execute(self, userdata):
         rospy.loginfo('executing state ALIGN_ROBOT_TO_RAMP')
 
         if userdata.align_robot_to_ramp_input:
             rospy.loginfo("got userdata: %s", userdata.align_robot_to_ramp_input)
 
             pose_stamped = userdata.align_robot_to_ramp_input
+
+            pose_stamped = self.transform_pose(pose_stamped, 'map')
+
             move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
             move_base_client.wait_for_server()
 
             goal = MoveBaseGoal()
-            goal.target_pose.header.frame_id = "base_link"
+            goal.target_pose.header.frame_id = "map"
             goal.target_pose.header.stamp = rospy.Time.now()
+
             goal.target_pose.pose.position = pose_stamped.pose.position
             goal.target_pose.pose.orientation = pose_stamped.pose.orientation
 
@@ -75,6 +83,25 @@ class AlignRobotToRamp(smach.State):
             return 'succeeded'
 
         return 'aborted'
+
+    def transform_pose(self, pose_stamped, target_frame):
+
+        global TF_BUFFER
+
+        try:
+            transform = TF_BUFFER.lookup_transform(target_frame,
+                                                   pose_stamped.header.frame_id,  # source frame
+                                                   rospy.Time(0),  # get tf at first available time
+                                                   rospy.Duration(1.0))  # wait for one second
+
+            pose_transformed = tf2_geometry_msgs.do_transform_pose(pose_stamped, transform)
+
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            print("Exception while trying to transform pose stamped from %s to %s", pose_stamped.header.frame_id,
+                  target_frame)
+            raise
+
+        return pose_transformed
 
 
 class DriveIntoContainer(smach.State):
@@ -161,6 +188,11 @@ class DockingStateMachine(smach.StateMachine):
 def main():
     rospy.init_node('docking_smach')
 
+    global TF_BUFFER
+
+    TF_BUFFER = tf2_ros.Buffer()
+    tf2_ros.TransformListener(TF_BUFFER)
+
     sm = DockingStateMachine()
 
     # construct action server wrapper
@@ -182,4 +214,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except rospy.ROSInterruptException:
+        pass
