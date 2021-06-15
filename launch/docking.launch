@@ -2,7 +2,7 @@
 
 <launch>
 
-    <param name="use_sim_time" value="true" />
+    <param name="/use_sim_time" value="true" />
 
     <node pkg="arox_docking" type="detect_container_entry.py" name="detect_container_entry" respawn="true" output="screen" />
 

@@ -4,7 +4,8 @@ import math
 import numpy as np
 from sensor_msgs.msg import LaserScan
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Point, PoseStamped
+from geometry_msgs.msg import Point, PoseStamped, Quaternion
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
 CONTAINER_WIDTH = 2.83
 CONTAINER_LENGTH = 3.7
@@ -89,23 +90,56 @@ def publish_corners(intersections, header):
     CORNER_PUB.publish(marker)
 
 
-def publish_container_entry(entry):
+def publish_container_entry(container_entry):
     """
-    Publishes the position in front of the container entry where the robot should move to.
-    TODO: Could be an arrow pointing towards the container entry
+    Publishes the position in front of the container entry where the robot should move to (as pose stamped).
 
-    :param entry: position in front of the container entry
+    :param container_entry: position in front of the container entry
+    """
+    global ENTRY_PUB
+    goal = PoseStamped()
+    goal.header.frame_id = "base_link"
+    goal.header.stamp = rospy.Time.now()
+    goal.pose.position.x = container_entry.x
+    goal.pose.position.y = container_entry.y
+    goal.pose.position.z = 0.0
+    goal.pose.orientation.x = 0.0
+    goal.pose.orientation.y = 0.0
+    goal.pose.orientation.z = 0.0
+    goal.pose.orientation.w = 1.0
+    ENTRY_PUB.publish(goal)
+
+
+def publish_container_entry_arrow(container_entry, base_point):
+    """
+    Publishes the position of the container entry as arrow marker pointing towards the entry.
+
+    :param container_entry: point in front of the container entry
+    :param base_point: point on the container front (entry line)
     """
     global ENTRY_MARKER_PUB
     marker = Marker()
     marker.header.frame_id = "base_link"
     marker.id = 1
-    marker.type = marker.POINTS
-    marker.action = marker.ADD
-    marker.pose.orientation.w = 1
-    marker.points = entry
-    marker.scale.x = marker.scale.y = marker.scale.z = 0.4
-    marker.color.a = marker.color.g = marker.color.r = 1.0
+    marker.type = Marker.ARROW
+    marker.action = Marker.ADD
+
+    marker.pose.position.x = container_entry.x
+    marker.pose.position.y = container_entry.y
+
+    angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
+    q = quaternion_from_euler(0, 0, angle)
+    marker.pose.orientation = Quaternion(*q)
+
+    marker.scale.x = 0.75
+    marker.scale.y = 0.2
+    marker.scale.z = 0.0
+
+    marker.color.r = 0
+    marker.color.g = 0
+    marker.color.b = 1.0
+    marker.color.a = 1.0
+
     ENTRY_MARKER_PUB.publish(marker)
 
 
@@ -440,7 +474,7 @@ def determine_container_entry(corners, avg_points):
 
     :param corners: detected container corners
     :param avg_points: average points representing detected lines
-    :return: container entry
+    :return: base point, container entry
     """
     base_point = Point()
     base_point.x = (corners[0].x + corners[1].x) / 2
@@ -462,8 +496,8 @@ def determine_container_entry(corners, avg_points):
     avg_entry_candidate_one = np.average([dist(entry_candidate_one, p) for p in avg_points])
     avg_entry_candidate_two = np.average([dist(entry_candidate_two, p) for p in avg_points])
     if avg_entry_candidate_one > avg_entry_candidate_two:
-        return entry_candidate_one
-    return entry_candidate_two
+        return base_point, entry_candidate_one
+    return base_point, entry_candidate_two
 
 
 def publish_detected_container(found_line_params, header, avg_points):
@@ -484,22 +518,10 @@ def publish_detected_container(found_line_params, header, avg_points):
             # TODO: think about reasonable way to determine entry (distinguish front / back)
         elif len(container_corners) >= 2:
             # rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
-            # publish container entry
-            container_entry = determine_container_entry(container_corners, avg_points)
-            publish_container_entry([container_entry])
 
-            goal = PoseStamped()
-            goal.header.frame_id = "base_link"
-            goal.header.stamp = rospy.Time.now()
-            goal.pose.position.x = container_entry.x
-            goal.pose.position.y = container_entry.y
-            goal.pose.position.z = 0.0
-            goal.pose.orientation.x = 0.0
-            goal.pose.orientation.y = 0.0
-            goal.pose.orientation.z = 0.0
-            goal.pose.orientation.w = 1.0
-            rospy.loginfo("PUBLISHING ENTRY POINT")
-            ENTRY_PUB.publish(goal)
+            base_point, container_entry = determine_container_entry(container_corners, avg_points)
+            publish_container_entry_arrow(container_entry, base_point)
+            publish_container_entry(container_entry)
 
         publish_corners(container_corners, header)
 
