@@ -90,11 +90,12 @@ def publish_corners(intersections, header):
     CORNER_PUB.publish(marker)
 
 
-def publish_container_entry(container_entry):
+def publish_container_entry(container_entry, angle):
     """
     Publishes the position in front of the container entry where the robot should move to (as pose stamped).
 
     :param container_entry: position in front of the container entry
+    :param angle: orientation in front of the container
     """
     global ENTRY_PUB
     goal = PoseStamped()
@@ -103,19 +104,17 @@ def publish_container_entry(container_entry):
     goal.pose.position.x = container_entry.x
     goal.pose.position.y = container_entry.y
     goal.pose.position.z = 0.0
-    goal.pose.orientation.x = 0.0
-    goal.pose.orientation.y = 0.0
-    goal.pose.orientation.z = 0.0
-    goal.pose.orientation.w = 1.0
+    q = quaternion_from_euler(0, 0, angle)
+    goal.pose.orientation = Quaternion(*q)
     ENTRY_PUB.publish(goal)
 
 
-def publish_container_entry_arrow(container_entry, base_point):
+def publish_container_entry_arrow(container_entry, angle):
     """
     Publishes the position of the container entry as arrow marker pointing towards the entry.
 
     :param container_entry: point in front of the container entry
-    :param base_point: point on the container front (entry line)
+    :param angle: orientation in front of the container
     """
     global ENTRY_MARKER_PUB
     marker = Marker()
@@ -124,21 +123,21 @@ def publish_container_entry_arrow(container_entry, base_point):
     marker.type = Marker.ARROW
     marker.action = Marker.ADD
 
-    marker.pose.position.x = container_entry.x
-    marker.pose.position.y = container_entry.y
+    if container_entry:
+        marker.pose.position.x = container_entry.x
+        marker.pose.position.y = container_entry.y
 
-    angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
-    q = quaternion_from_euler(0, 0, angle)
-    marker.pose.orientation = Quaternion(*q)
+        q = quaternion_from_euler(0, 0, angle)
+        marker.pose.orientation = Quaternion(*q)
 
-    marker.scale.x = 0.75
-    marker.scale.y = 0.2
-    marker.scale.z = 0.0
+        marker.scale.x = 0.75
+        marker.scale.y = 0.2
+        marker.scale.z = 0.0
 
-    marker.color.r = 0
-    marker.color.g = 0
-    marker.color.b = 1.0
-    marker.color.a = 1.0
+        marker.color.r = 0
+        marker.color.g = 0
+        marker.color.b = 1.0
+        marker.color.a = 1.0
 
     ENTRY_MARKER_PUB.publish(marker)
 
@@ -520,8 +519,11 @@ def publish_detected_container(found_line_params, header, avg_points):
             # rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
 
             base_point, container_entry = determine_container_entry(container_corners, avg_points)
-            publish_container_entry_arrow(container_entry, base_point)
-            publish_container_entry(container_entry)
+
+            angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
+
+            publish_container_entry_arrow(container_entry, angle)
+            publish_container_entry(container_entry, angle)
 
         publish_corners(container_corners, header)
 
@@ -591,6 +593,7 @@ def detect_container(hough_space, header, corresponding_points):
 
     # reset outdated markers
     publish_corners([], header)
+    publish_container_entry_arrow(None, None)
     # rospy.loginfo("NOTHING DETECTED!")
     return generate_default_line_marker(header)
 
