@@ -15,6 +15,25 @@ from arox_docking.msg import DockAction
 TF_BUFFER = None
 
 
+def transform_pose(pose_stamped, target_frame):
+    global TF_BUFFER
+
+    try:
+        transform = TF_BUFFER.lookup_transform(target_frame,
+                                               pose_stamped.header.frame_id,  # source frame
+                                               rospy.Time(0),  # get tf at first available time
+                                               rospy.Duration(1.0))  # wait for one second
+
+        pose_transformed = tf2_geometry_msgs.do_transform_pose(pose_stamped, transform)
+
+    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+        print("Exception while trying to transform pose stamped from %s to %s", pose_stamped.header.frame_id,
+              target_frame)
+        raise
+
+    return pose_transformed
+
+
 # initial state
 class ContainerProximity(smach.State):
     def __init__(self):
@@ -64,7 +83,7 @@ class AlignRobotToRamp(smach.State):
 
             pose_stamped = userdata.align_robot_to_ramp_input
 
-            pose_stamped = self.transform_pose(pose_stamped, 'map')
+            pose_stamped = transform_pose(pose_stamped, 'map')
 
             move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
             move_base_client.wait_for_server()
@@ -80,38 +99,54 @@ class AlignRobotToRamp(smach.State):
             rospy.loginfo("now waiting...")
             move_base_client.wait_for_result()
             rospy.loginfo("after wait: %s", move_base_client.get_result())
+
             return 'succeeded'
 
         return 'aborted'
-
-    def transform_pose(self, pose_stamped, target_frame):
-
-        global TF_BUFFER
-
-        try:
-            transform = TF_BUFFER.lookup_transform(target_frame,
-                                                   pose_stamped.header.frame_id,  # source frame
-                                                   rospy.Time(0),  # get tf at first available time
-                                                   rospy.Duration(1.0))  # wait for one second
-
-            pose_transformed = tf2_geometry_msgs.do_transform_pose(pose_stamped, transform)
-
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            print("Exception while trying to transform pose stamped from %s to %s", pose_stamped.header.frame_id,
-                  target_frame)
-            raise
-
-        return pose_transformed
 
 
 class DriveIntoContainer(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'])
+        self.received_goal = None
+        self.subscriber = None
 
-    @staticmethod
-    def execute(userdata):
+    def callback(self, data):
+        self.received_goal = data
+
+    def drive_in(self):
+        pose_stamped = transform_pose(self.received_goal, 'map')
+        move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
+        move_base_client.wait_for_server()
+
+        goal = MoveBaseGoal()
+        goal.target_pose.header.frame_id = "map"
+        goal.target_pose.header.stamp = rospy.Time.now()
+
+        goal.target_pose.pose.position = pose_stamped.pose.position
+        goal.target_pose.pose.orientation = pose_stamped.pose.orientation
+
+        move_base_client.send_goal(goal)
+        rospy.loginfo("now waiting...")
+        res = move_base_client.wait_for_result()
+        rospy.loginfo("RES: %s", res)
+        rospy.loginfo("after wait: %s", move_base_client.get_result())
+
+    def execute(self, userdata):
         rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
-        return 'succeeded'
+        cnt = 0
+        self.subscriber = rospy.Subscriber('/center', PoseStamped, self.callback)
+
+        while cnt < 15:
+            if self.received_goal:
+                rospy.loginfo("detected center: %s", self.received_goal)
+                self.drive_in()
+                return 'succeeded'
+
+            rospy.sleep(2)
+            cnt += 1
+
+        return 'aborted'
 
 
 class LocalizeChargingStation(smach.State):
