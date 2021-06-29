@@ -111,14 +111,14 @@ def publish_container_entry(container_entry, angle):
     ENTRY_PUB.publish(goal)
 
 
-def publish_container_center(center_point):
+def publish_container_center(center_point, header):
     global CENTER_PUB
     center = PoseStamped()
-    center.header.frame_id = "base_link"
+    center.header = header
     center.header.stamp = rospy.Time.now()
     center.pose.position.x = center_point.x
     center.pose.position.y = center_point.y
-    #center.pose.position.z = 0.0
+    center.pose.position.z = 0.0
     center.pose.orientation.x = 0.0
     center.pose.orientation.y = 0.0
     center.pose.orientation.z = 0.0
@@ -550,7 +550,7 @@ def publish_detected_container(found_line_params, header, avg_points):
             center.x = np.average([p.x for p in container_corners])
             center.y = np.average([p.y for p in container_corners])
             #rospy.loginfo("publish container center: %s", center)
-            publish_container_center(center)
+            publish_container_center(center, header)
             publish_container_center_marker(center, header)
 
             # TODO: think about reasonable way to determine entry (distinguish front / back)
