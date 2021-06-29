@@ -12,10 +12,12 @@ CONTAINER_LENGTH = 3.7
 EPSILON = 0.2
 
 HOUGH_LINE_PUB = None
-CORNER_PUB = None
+CORNER_MARKER_PUB = None
 ENTRY_MARKER_PUB = None
+CENTER_MARKER_PUB = None
 DBG_PUB = None
 ENTRY_PUB = None
+CENTER_PUB = None
 
 DBG_POINTS = []
 
@@ -77,7 +79,7 @@ def publish_corners(intersections, header):
     :param intersections: container corners (where the sides intersect)
     :param header: point cloud header
     """
-    global CORNER_PUB
+    global CORNER_MARKER_PUB
     marker = Marker()
     marker.header = header
     marker.id = 1
@@ -87,7 +89,7 @@ def publish_corners(intersections, header):
     marker.points = intersections
     marker.scale.x = marker.scale.y = marker.scale.z = 0.4
     marker.color.a = marker.color.b = 1.0
-    CORNER_PUB.publish(marker)
+    CORNER_MARKER_PUB.publish(marker)
 
 
 def publish_container_entry(container_entry, angle):
@@ -107,6 +109,35 @@ def publish_container_entry(container_entry, angle):
     q = quaternion_from_euler(0, 0, angle)
     goal.pose.orientation = Quaternion(*q)
     ENTRY_PUB.publish(goal)
+
+
+def publish_container_center(center_point):
+    global CENTER_PUB
+    center = PoseStamped()
+    center.header.frame_id = "base_link"
+    center.header.stamp = rospy.Time.now()
+    center.pose.position.x = center_point.x
+    center.pose.position.y = center_point.y
+    #center.pose.position.z = 0.0
+    center.pose.orientation.x = 0.0
+    center.pose.orientation.y = 0.0
+    center.pose.orientation.z = 0.0
+    center.pose.orientation.w = 1.0
+    CENTER_PUB.publish(center)
+
+
+def publish_container_center_marker(center, header):
+    global CENTER_MARKER_PUB
+    marker = Marker()
+    marker.header = header
+    marker.id = 1
+    marker.type = marker.POINTS
+    marker.action = marker.ADD
+    marker.pose.orientation.w = 1
+    marker.points = [center]
+    marker.scale.x = marker.scale.y = marker.scale.z = 0.4
+    marker.color.a = marker.color.g = marker.color.r = 1.0
+    ENTRY_MARKER_PUB.publish(marker)
 
 
 def publish_container_entry_arrow(container_entry, angle):
@@ -483,7 +514,7 @@ def determine_container_entry(corners, avg_points):
     length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
     res_vec = (direction_vector[0] / length, direction_vector[1] / length)
 
-    distance = 1
+    distance = 2.5
     entry_candidate_one = Point()
     entry_candidate_one.x = base_point.x - res_vec[1] * distance
     entry_candidate_one.y = base_point.y + res_vec[0] * distance
@@ -512,8 +543,16 @@ def publish_detected_container(found_line_params, header, avg_points):
     container_corners = retrieve_container_corners(found_line_params)
     if len(container_corners) > 0:
         if len(container_corners) == 4:
-            pass
-            # rospy.loginfo("CONTAINER DETECTED!")
+            #rospy.loginfo("CONTAINER DETECTED!")
+
+            # publish container center
+            center = Point()
+            center.x = np.average([p.x for p in container_corners])
+            center.y = np.average([p.y for p in container_corners])
+            #rospy.loginfo("publish container center: %s", center)
+            publish_container_center(center)
+            publish_container_center_marker(center, header)
+
             # TODO: think about reasonable way to determine entry (distinguish front / back)
         elif len(container_corners) >= 2:
             # rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
@@ -665,14 +704,16 @@ def node():
     """
     Node to detect the container entry in a point cloud.
     """
-    global HOUGH_LINE_PUB, CORNER_PUB, DBG_PUB, ENTRY_MARKER_PUB, ENTRY_PUB
+    global HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, ENTRY_MARKER_PUB, ENTRY_PUB, CENTER_PUB, CENTER_MARKER_PUB
 
-    rospy.init_node('detect_container_entry')
+    rospy.init_node("detect_container_entry")
     HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
-    CORNER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
+    CORNER_MARKER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
     ENTRY_MARKER_PUB = rospy.Publisher("/entry_point", Marker, queue_size=1)
+    CENTER_MARKER_PUB = rospy.Publisher("/center_point", Marker, queue_size=1)
     DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
     ENTRY_PUB = rospy.Publisher("/container_entry", PoseStamped, queue_size=1)
+    CENTER_PUB = rospy.Publisher("/center", PoseStamped, queue_size=1)
     # subscribing to the scan that is the result of 'pointcloud_to_laserscan'
     rospy.Subscriber("/scanVelodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
 
