@@ -13,6 +13,7 @@ from geometry_msgs.msg import PoseStamped
 from arox_docking.msg import DockAction
 
 TF_BUFFER = None
+FAILURE = 50
 
 
 def transform_pose(pose_stamped, target_frame):
@@ -107,7 +108,10 @@ class AlignRobotToRamp(smach.State):
 
 class DriveIntoContainer(smach.State):
     def __init__(self):
-        smach.State.__init__(self, outcomes=['succeeded', 'aborted'])
+        smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
+                             input_keys=['drive_into_container_input'],
+                             output_keys=['drive_into_container_output'])
+
         self.received_goal = None
         self.subscriber = None
 
@@ -128,24 +132,34 @@ class DriveIntoContainer(smach.State):
 
         move_base_client.send_goal(goal)
         rospy.loginfo("now waiting...")
-        res = move_base_client.wait_for_result()
-        rospy.loginfo("RES: %s", res)
-        rospy.loginfo("after wait: %s", move_base_client.get_result())
+        move_base_client.wait_for_result()
+
+        if move_base_client.get_result().outcome == FAILURE:
+            rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
+            return False
+        return True
 
     def execute(self, userdata):
         rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
         cnt = 0
         self.subscriber = rospy.Subscriber('/center', PoseStamped, self.callback)
 
+        act = DockAction
+
         while cnt < 15:
             if self.received_goal:
                 rospy.loginfo("detected center: %s", self.received_goal)
-                self.drive_in()
-                return 'succeeded'
-
+                if self.drive_in():
+                    act.result_state = "success"
+                    userdata.drive_into_container_output = act
+                    return 'succeeded'
+                act.result_state = "failure"
+                userdata.drive_into_container_output = act
+                return 'aborted'
             rospy.sleep(2)
             cnt += 1
-
+        act.result_state = "failure"
+        userdata.drive_into_container_output = act
         return 'aborted'
 
 
@@ -184,7 +198,7 @@ class DockingStateMachine(smach.StateMachine):
         super(DockingStateMachine, self).__init__(
             outcomes=['failed', 'docked'],
             input_keys=['sm_input'],
-            output_keys=[]
+            output_keys=['sm_output']
         )
 
         with self:
@@ -203,9 +217,10 @@ class DockingStateMachine(smach.StateMachine):
                                   'aborted': 'failed'},
                      remapping={'align_robot_to_ramp_input': 'sm_input'})
 
-            self.add('DRIVE_INTO_CONTAINER', DriveIntoContainer(), transitions={
-                'succeeded': 'LOCALIZE_CHARGING_STATION',
-                'aborted': 'failed'})
+            self.add('DRIVE_INTO_CONTAINER', DriveIntoContainer(),
+                     transitions={'succeeded': 'LOCALIZE_CHARGING_STATION',
+                                  'aborted': 'failed'},
+                     remapping={'drive_into_container_output': 'sm_output'})
 
             self.add('LOCALIZE_CHARGING_STATION', LocalizeChargingStation(), transitions={
                 'succeeded': 'ALIGN_ROBOT_TO_CHARGING_STATION',
@@ -215,9 +230,8 @@ class DockingStateMachine(smach.StateMachine):
                 'succeeded': 'DOCK',
                 'aborted': 'failed'})
 
-            self.add('DOCK', Dock(), transitions={
-                'succeeded': 'docked',
-                'aborted': 'failed'})
+            self.add('DOCK', Dock(),
+                     transitions={'succeeded': 'docked', 'aborted': 'failed'})
 
 
 def main():
@@ -235,9 +249,9 @@ def main():
         'dock_to_charging_station', DockAction,
         wrapped_container=sm,
         succeeded_outcomes=['docked'],
-        aborted_outcomes=['aborted'],
+        aborted_outcomes=['failed'],
         goal_key='sm_input',
-        # result_key='result'
+        result_key='sm_output'
     )
 
     rospy.loginfo("running action server wrapper..")
