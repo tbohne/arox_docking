@@ -35,6 +35,18 @@ def transform_pose(pose_stamped, target_frame):
     return pose_transformed
 
 
+def get_failure_msg():
+    msg = DockAction
+    msg.result_state = "failure"
+    return msg
+
+
+def get_success_msg():
+    msg = DockAction
+    msg.result_state = "success"
+    return msg
+
+
 # initial state
 class ContainerProximity(smach.State):
     def __init__(self):
@@ -144,22 +156,17 @@ class DriveIntoContainer(smach.State):
         cnt = 0
         self.subscriber = rospy.Subscriber('/center', PoseStamped, self.callback)
 
-        act = DockAction
-
         while cnt < 15:
             if self.received_goal:
                 rospy.loginfo("detected center: %s", self.received_goal)
                 if self.drive_in():
-                    act.result_state = "success"
-                    userdata.drive_into_container_output = act
+                    userdata.drive_into_container_output = get_success_msg()
                     return 'succeeded'
-                act.result_state = "failure"
-                userdata.drive_into_container_output = act
+                userdata.drive_into_container_output = get_failure_msg()
                 return 'aborted'
             rospy.sleep(2)
             cnt += 1
-        act.result_state = "failure"
-        userdata.drive_into_container_output = act
+        userdata.drive_into_container_output = get_failure_msg()
         return 'aborted'
 
 
