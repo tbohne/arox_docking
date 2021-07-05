@@ -2,7 +2,7 @@
 string goal
 ---
 #result
-string success
+string result_state
 ---
 #feedback
 float64 percentage
