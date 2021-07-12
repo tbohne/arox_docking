@@ -15,9 +15,11 @@ HOUGH_LINE_PUB = None
 CORNER_MARKER_PUB = None
 ENTRY_MARKER_PUB = None
 CENTER_MARKER_PUB = None
+OUTDOOR_MARKER_PUB = None
 DBG_PUB = None
 ENTRY_PUB = None
 CENTER_PUB = None
+OUTDOOR_PUB = None
 
 DBG_POINTS = []
 
@@ -126,6 +128,16 @@ def publish_container_center(center_point, header):
     CENTER_PUB.publish(center)
 
 
+def publish_outdoor_point(outdoor_point, header):
+    global OUTDOOR_PUB
+    outdoor = PoseStamped()
+    outdoor.header = header
+    outdoor.header.stamp = rospy.Time.now()
+    outdoor.pose.position.x = outdoor_point.x
+    outdoor.pose.position.y = outdoor_point.y
+    OUTDOOR_PUB.publish(outdoor)
+
+
 def publish_container_center_marker(center, header):
     global CENTER_MARKER_PUB
     marker = Marker()
@@ -137,7 +149,24 @@ def publish_container_center_marker(center, header):
     marker.points = [center]
     marker.scale.x = marker.scale.y = marker.scale.z = 0.4
     marker.color.a = marker.color.g = marker.color.r = 1.0
-    ENTRY_MARKER_PUB.publish(marker)
+    CENTER_MARKER_PUB.publish(marker)
+
+
+def publish_outdoor_marker(outdoor, header):
+    global OUTDOOR_MARKER_PUB
+    marker = Marker()
+    marker.header = header
+    marker.id = 1
+    marker.type = marker.POINTS
+    marker.action = marker.ADD
+    marker.pose.orientation.w = 1
+    marker.points = [outdoor]
+    marker.scale.x = marker.scale.y = marker.scale.z = 0.4
+    marker.color.a = 1.0
+    marker.color.r = 0.6
+    marker.color.g = 0.0
+    marker.color.b = 0.9
+    OUTDOOR_MARKER_PUB.publish(marker)
 
 
 def publish_container_entry_arrow(container_entry, angle):
@@ -460,7 +489,8 @@ def line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, fou
 
     for r, t in found_line_params:
         # "equal" radius -> angle has to be different
-        if abs(abs(r) - abs(radius)) < DELTA_RADIUS:
+        # TODO: check whether 4 is appropriate
+        if abs(abs(r) - abs(radius)) < DELTA_RADIUS * 4:
             # angle too close -> no container side
             if abs(theta - t) < 60 or 120 < abs(theta - t) < 240:
                 return False
@@ -496,7 +526,8 @@ def retrieve_container_corners(found_line_params):
             if p != j:
                 d = dist(p, j)
                 if container_front_or_back_detected(d):
-                    container_corners.append(p)
+                    if not p in container_corners:
+                        container_corners.append(p)
     return container_corners
 
 
@@ -532,6 +563,29 @@ def determine_container_entry(corners, avg_points):
     return base_point, entry_candidate_two
 
 
+def determine_point_in_front_of_container(corners):
+    base_point = Point()
+
+    if dist(corners[0], corners[1]) < dist(corners[0], corners[2]):
+        base_point.x = (corners[0].x + corners[1].x) / 2
+        base_point.y = (corners[0].y + corners[1].y) / 2
+        direction_vector = (corners[1].x - corners[0].x, corners[1].y - corners[0].y)
+    else:
+        base_point.x = (corners[0].x + corners[2].x) / 2
+        base_point.y = (corners[0].y + corners[2].y) / 2
+        direction_vector = (corners[2].x - corners[0].x, corners[2].y - corners[0].y)
+
+    length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
+    res_vec = (direction_vector[0] / length, direction_vector[1] / length)
+
+    distance = CONTAINER_LENGTH * 1.5
+    outdoor = Point()
+    outdoor.x = base_point.x - res_vec[1] * distance
+    outdoor.y = base_point.y + res_vec[0] * distance
+
+    return outdoor
+
+
 def publish_detected_container(found_line_params, header, avg_points):
     """
     Publishes the detected corners of the container as well as its entry point.
@@ -545,22 +599,27 @@ def publish_detected_container(found_line_params, header, avg_points):
     container_corners = retrieve_container_corners(found_line_params)
     if len(container_corners) > 0:
         if len(container_corners) >= 4:
-            #rospy.loginfo("CONTAINER DETECTED!")
+            # rospy.loginfo("CONTAINER DETECTED!")
+
+            assert len(container_corners) == 4
 
             # publish container center
             center = Point()
             center.x = np.average([p.x for p in container_corners])
             center.y = np.average([p.y for p in container_corners])
-            #rospy.loginfo("publish container center: %s", center)
+            # rospy.loginfo("publish container center: %s", center)
             publish_container_center(center, header)
             publish_container_center_marker(center, header)
+
+            outdoor = determine_point_in_front_of_container(container_corners)
+            publish_outdoor_marker(outdoor, header)
+            publish_outdoor_point(outdoor, header)
 
             # TODO: think about reasonable way to determine entry (distinguish front / back)
         elif len(container_corners) >= 2:
             # rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
 
             base_point, container_entry = determine_container_entry(container_corners, avg_points)
-
             angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
 
             publish_container_entry_arrow(container_entry, angle)
@@ -706,7 +765,7 @@ def node():
     """
     Node to detect the container entry in a point cloud.
     """
-    global HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, ENTRY_MARKER_PUB, ENTRY_PUB, CENTER_PUB, CENTER_MARKER_PUB
+    global HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, ENTRY_MARKER_PUB, ENTRY_PUB, CENTER_PUB, CENTER_MARKER_PUB, OUTDOOR_MARKER_PUB, OUTDOOR_PUB
 
     rospy.init_node("detect_container_entry")
     HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
@@ -716,6 +775,8 @@ def node():
     DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
     ENTRY_PUB = rospy.Publisher("/container_entry", PoseStamped, queue_size=1)
     CENTER_PUB = rospy.Publisher("/center", PoseStamped, queue_size=1)
+    OUTDOOR_MARKER_PUB = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
+    OUTDOOR_PUB = rospy.Publisher("/outdoor", PoseStamped, queue_size=1)
     # subscribing to the scan that is the result of 'pointcloud_to_laserscan'
     rospy.Subscriber("/scanVelodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
 
