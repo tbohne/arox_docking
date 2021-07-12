@@ -14,6 +14,7 @@ from arox_docking.msg import DockAction
 
 TF_BUFFER = None
 FAILURE = 50
+CENTER_DETECTION_ATTEMPTS = 30
 
 
 def transform_pose(pose_stamped, target_frame):
@@ -112,9 +113,9 @@ class AlignRobotToRamp(smach.State):
             rospy.loginfo("now waiting...")
             move_base_client.wait_for_result()
             rospy.loginfo("after wait: %s", move_base_client.get_result())
-
+            rospy.loginfo("sleeping for 5s...")
+            rospy.sleep(5)
             return 'succeeded'
-
         return 'aborted'
 
 
@@ -156,7 +157,7 @@ class DriveIntoContainer(smach.State):
         cnt = 0
         self.subscriber = rospy.Subscriber('/center', PoseStamped, self.callback)
 
-        while cnt < 15:
+        while cnt < CENTER_DETECTION_ATTEMPTS:
             if self.received_goal:
                 rospy.loginfo("detected center: %s", self.received_goal)
                 if self.drive_in():
