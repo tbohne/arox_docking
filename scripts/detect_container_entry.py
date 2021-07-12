@@ -322,8 +322,10 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points):
     orthogonal_to_base = diff < 2 or 88 < diff < 92 or 178 < diff < 182 or 268 < diff < 272
     avg_dist, max_dist = compute_avg_and_max_distance(point_list)
     reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
+
     tolerated_length = CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON
     tolerated_width = CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON
+
     reasonable_len = tolerated_length >= max_dist >= tolerated_width
     reasonable_avg_distances = CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
     jumps = False  # detect_jumps(point_list)
@@ -458,7 +460,7 @@ def line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, fou
 
     for r, t in found_line_params:
         # "equal" radius -> angle has to be different
-        if abs(abs(r) - abs(radius)) < DELTA_RADIUS * 10:
+        if abs(abs(r) - abs(radius)) < DELTA_RADIUS:
             # angle too close -> no container side
             if abs(theta - t) < 60 or 120 < abs(theta - t) < 240:
                 return False
@@ -542,7 +544,7 @@ def publish_detected_container(found_line_params, header, avg_points):
     # rospy.loginfo("parameters of detected lines: %s", found_line_params)
     container_corners = retrieve_container_corners(found_line_params)
     if len(container_corners) > 0:
-        if len(container_corners) == 4:
+        if len(container_corners) >= 4:
             #rospy.loginfo("CONTAINER DETECTED!")
 
             # publish container center
