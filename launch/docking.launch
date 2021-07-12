@@ -8,6 +8,8 @@
 
     <node pkg="arox_docking" type="docking_sm.py" name="docking_smach" respawn="true" output="screen" />
 
+    <node pkg="arox_docking" type="undocking_sm.py" name="undocking_smach" respawn="true" output="screen" />
+
   <!-- <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="pointcloud_to_laserscan">
     <rosparam>
       target_frame: base_link
