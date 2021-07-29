@@ -32,7 +32,7 @@ DELTA_RADIUS = 0.02
 RADIUS_MIN = -10.0
 RADIUS_MAX = 10.0
 # TODO: distance to robot pos should be considered for the ACC_THRESH
-ACC_THRESHOLD = 5
+ACC_THRESHOLD = 15
 
 
 def generate_default_line_marker(header):
@@ -94,7 +94,7 @@ def publish_corners(intersections, header):
     CORNER_MARKER_PUB.publish(marker)
 
 
-def publish_container_entry(container_entry, angle):
+def publish_container_entry(container_entry, header, angle):
     """
     Publishes the position in front of the container entry where the robot should move to (as pose stamped).
 
@@ -103,7 +103,7 @@ def publish_container_entry(container_entry, angle):
     """
     global ENTRY_PUB
     goal = PoseStamped()
-    goal.header.frame_id = "base_link"
+    goal.header = header
     goal.header.stamp = rospy.Time.now()
     goal.pose.position.x = container_entry.x
     goal.pose.position.y = container_entry.y
@@ -167,7 +167,7 @@ def publish_outdoor_marker(outdoor, header):
     OUTDOOR_MARKER_PUB.publish(marker)
 
 
-def publish_container_entry_arrow(container_entry, angle):
+def publish_container_entry_arrow(container_entry, header, angle):
     """
     Publishes the position of the container entry as arrow marker pointing towards the entry.
 
@@ -176,7 +176,8 @@ def publish_container_entry_arrow(container_entry, angle):
     """
     global ENTRY_MARKER_PUB
     marker = Marker()
-    marker.header.frame_id = "base_link"
+    if header:
+        marker.header = header
     marker.id = 1
     marker.type = Marker.ARROW
     marker.action = Marker.ADD
@@ -309,7 +310,7 @@ def reasonable_dist_to_already_detected_lines(point_list, avg_points):
     avg.x = np.average([p.x for p in point_list])
     avg.y = np.average([p.y for p in point_list])
     for p in avg_points:
-        if dist(avg, p) > CONTAINER_LENGTH or dist(avg, p) < CONTAINER_WIDTH / 2:
+        if dist(avg, p) > CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON or dist(avg, p) < CONTAINER_WIDTH / 2:
             return False
     return True
 
@@ -351,11 +352,11 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points):
     orthogonal_to_base = diff < 2 or 88 < diff < 92 or 178 < diff < 182 or 268 < diff < 272
     avg_dist, max_dist = compute_avg_and_max_distance(point_list)
     reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
+    tolerated_length = CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON * 2
+    # shouldn't be too restrictive at the lower bound (partially detected lines etc.)
+    reasonable_len = tolerated_length >= max_dist >= 0.5
 
-    tolerated_length = CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON
-    tolerated_width = CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON
-
-    reasonable_len = tolerated_length >= max_dist >= tolerated_width
+    # TODO: perhaps not so useful
     reasonable_avg_distances = CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
     jumps = False  # detect_jumps(point_list)
 
@@ -506,7 +507,8 @@ def line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, fou
                 width_eps = CONTAINER_WIDTH * EPSILON
                 length_eps = CONTAINER_LENGTH * EPSILON
                 tolerated_width = CONTAINER_WIDTH - width_eps < d < CONTAINER_WIDTH + width_eps
-                tolerated_length = CONTAINER_LENGTH - length_eps < d < CONTAINER_LENGTH + length_eps
+                # TODO: check hard coded additional length_eps -> was necessary occasionally
+                tolerated_length = CONTAINER_LENGTH - length_eps < d < CONTAINER_LENGTH + length_eps * 2
                 if not tolerated_width and not tolerated_length:
                     return False
     return True
@@ -627,8 +629,8 @@ def publish_detected_container(found_line_params, header, avg_points):
             base_point, container_entry = determine_container_entry(container_corners, avg_points)
             angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
 
-            publish_container_entry_arrow(container_entry, angle)
-            publish_container_entry(container_entry, angle)
+            publish_container_entry_arrow(container_entry, header, angle)
+            publish_container_entry(container_entry, header, angle)
 
         publish_corners(container_corners, header)
 
@@ -698,7 +700,7 @@ def detect_container(hough_space, header, corresponding_points):
 
     # reset outdated markers
     publish_corners([], header)
-    publish_container_entry_arrow(None, None)
+    publish_container_entry_arrow(None, None, None)
     # rospy.loginfo("NOTHING DETECTED!")
     return generate_default_line_marker(header)
 
