@@ -113,7 +113,7 @@ def publish_container_entry(container_entry, angle):
     ENTRY_PUB.publish(goal)
 
 
-def publish_container_center(center_point, header):
+def publish_container_center(center_point, header, angle):
     global CENTER_PUB
     center = PoseStamped()
     center.header = header
@@ -121,10 +121,8 @@ def publish_container_center(center_point, header):
     center.pose.position.x = center_point.x
     center.pose.position.y = center_point.y
     center.pose.position.z = 0.0
-    center.pose.orientation.x = 0.0
-    center.pose.orientation.y = 0.0
-    center.pose.orientation.z = 0.0
-    center.pose.orientation.w = 1.0
+    q = quaternion_from_euler(0, 0, angle)
+    center.pose.orientation = Quaternion(*q)
     CENTER_PUB.publish(center)
 
 
@@ -292,7 +290,9 @@ def compute_avg_and_max_distance(point_list):
     :return: average distance, max distance
     """
     distances = [dist(i, j) for i in point_list for j in point_list if i != j]
-    return np.average(distances), np.max(distances)
+    if len(distances) > 0:
+        return np.average(distances), np.max(distances)
+    return 0, 0
 
 
 def reasonable_dist_to_already_detected_lines(point_list, avg_points):
@@ -608,10 +608,15 @@ def publish_detected_container(found_line_params, header, avg_points):
             center.x = np.average([p.x for p in container_corners])
             center.y = np.average([p.y for p in container_corners])
             # rospy.loginfo("publish container center: %s", center)
-            publish_container_center(center, header)
-            publish_container_center_marker(center, header)
 
             outdoor = determine_point_in_front_of_container(container_corners)
+
+            # TODO
+            angle = math.atan2(outdoor.y - center.y, outdoor.x - center.x)
+
+            publish_container_center(center, header, angle)
+            publish_container_center_marker(center, header)
+
             publish_outdoor_marker(outdoor, header)
             publish_outdoor_point(outdoor, header)
 
