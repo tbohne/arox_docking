@@ -3,6 +3,7 @@ import rospy
 import math
 import numpy as np
 from sensor_msgs.msg import LaserScan
+from nav_msgs.msg import Odometry
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
@@ -22,6 +23,7 @@ CENTER_PUB = None
 OUTDOOR_PUB = None
 
 DBG_POINTS = []
+ROBOT_POS = None
 
 DELTA_THETA = 2
 THETA_MIN = 0
@@ -472,7 +474,7 @@ def intersection(line1, line2):
     return x, y
 
 
-def line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius):
+def line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius, acc_thresh):
     """
     Determines whether the detected line corresponds to the base line in the sense that the combination
     of the two satisfies the shape criteria of the container.
@@ -483,9 +485,10 @@ def line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, fou
     :param avg_points: avg points representing previously detected lines
     :param found_line_params: parameters of previously detected lines
     :param radius: radius value of the detected line
+    :param acc_thresh: threshold for accumulator array (number of points on line)
     :return: whether the detected line corresponds to the base line
     """
-    if len(point_list) <= ACC_THRESHOLD or not detected_reasonable_line(point_list, theta_base, theta, avg_points):
+    if len(point_list) <= acc_thresh or not detected_reasonable_line(point_list, theta_base, theta, avg_points):
         return False
 
     for r, t in found_line_params:
@@ -635,6 +638,18 @@ def publish_detected_container(found_line_params, header, avg_points):
         publish_corners(container_corners, header)
 
 
+def determine_thresh_based_on_dist_to_robot(dist_to_robot):
+    # TODO: to be refined based on experiments
+    if dist_to_robot < 3:
+        return 75
+    elif dist_to_robot < 5:
+        return 15
+    elif dist_to_robot < 8:
+        return 10
+    else:
+        return 5
+
+
 def detect_container(hough_space, header, corresponding_points):
     """
     Detects the container based on lines in the specified hough space.
@@ -646,23 +661,33 @@ def detect_container(hough_space, header, corresponding_points):
     """
     global DBG_POINTS
 
+    c, r = retrieve_best_line(hough_space)
+    point_list = median_filter(np.array(corresponding_points[(c, r)]))
+    dist_to_robot = dist(ROBOT_POS, point_list[0])
+    dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
+
     base_lines_tested = 0
     base_attempts = 0
     tested_base_lines = []
 
-    while hough_space.max() > ACC_THRESHOLD and base_lines_tested < 10 and base_attempts < 50:
+    while hough_space.max() > dynamic_acc_thresh_based_on_dist and base_lines_tested < 10 and base_attempts < 50:
         DBG_POINTS = []
         lines = generate_default_line_marker(header)
         # rospy.loginfo("testing new base line with %s points", hough_space.max())
         # base line parameters
         c, r = retrieve_best_line(hough_space)
         point_list = median_filter(np.array(corresponding_points[(c, r)]))
+
+        dist_to_robot = dist(ROBOT_POS, point_list[0])
+        dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
+        rospy.loginfo("DIST TO ROBOT: %s, THRESH: %s", dist_to_robot, dynamic_acc_thresh_based_on_dist)
+
         theta_base = get_theta_by_index(r)
         radius = get_radius_by_index(c)
         already_tested = already_tested_base_line(tested_base_lines, radius, theta_base)
         reasonable_line = detected_reasonable_line(point_list, None, theta_base, [])
 
-        if already_tested or len(point_list) <= ACC_THRESHOLD or not reasonable_line:
+        if already_tested or len(point_list) <= dynamic_acc_thresh_based_on_dist or not reasonable_line:
             hough_space[c][r] = 0
             base_attempts += 1
             # rospy.loginfo("base attempt: %s", base_attempts)
@@ -681,13 +706,13 @@ def detect_container(hough_space, header, corresponding_points):
         tested_base_lines.append((radius, theta_base))
 
         # detect remaining 2-3 sides
-        while len(found_line_params) < 4 and hough_copy.max() > ACC_THRESHOLD:
+        while len(found_line_params) < 4 and hough_copy.max() > dynamic_acc_thresh_based_on_dist:
             c, r = retrieve_best_line(hough_copy)
             radius = get_radius_by_index(c)
             point_list = median_filter(np.array(corresponding_points[(c, r)]))
             theta = get_theta_by_index(r)
 
-            if line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius):
+            if line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius, dynamic_acc_thresh_based_on_dist):
                 append_and_publish_dbg_points(point_list, header)
                 append_line_points(theta, radius, lines)
                 found_line_params.append((radius, theta))
@@ -768,6 +793,11 @@ def scan_callback(scan):
     HOUGH_LINE_PUB.publish(lines)
 
 
+def odom_callback(odom):
+    global ROBOT_POS
+    ROBOT_POS = odom.twist.twist.linear
+
+
 def node():
     """
     Node to detect the container entry in a point cloud.
@@ -784,8 +814,10 @@ def node():
     CENTER_PUB = rospy.Publisher("/center", PoseStamped, queue_size=1)
     OUTDOOR_MARKER_PUB = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
     OUTDOOR_PUB = rospy.Publisher("/outdoor", PoseStamped, queue_size=1)
-    # subscribing to the scan that is the result of 'pointcloud_to_laserscan'
+    # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
     rospy.Subscriber("/scanVelodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
+    # subscribe to robot pose (ground truth)
+    rospy.Subscriber("/pose_ground_truth", Odometry, odom_callback, queue_size=1)
 
     rospy.spin()
 
