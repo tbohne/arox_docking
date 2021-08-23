@@ -146,9 +146,10 @@ def publish_container_center_marker(center, header):
     marker.type = marker.POINTS
     marker.action = marker.ADD
     marker.pose.orientation.w = 1
-    marker.points = [center]
-    marker.scale.x = marker.scale.y = marker.scale.z = 0.4
-    marker.color.a = marker.color.g = marker.color.r = 1.0
+    if center:
+        marker.points = [center]
+        marker.scale.x = marker.scale.y = marker.scale.z = 0.4
+        marker.color.a = marker.color.g = marker.color.r = 1.0
     CENTER_MARKER_PUB.publish(marker)
 
 
@@ -160,12 +161,13 @@ def publish_outdoor_marker(outdoor, header):
     marker.type = marker.POINTS
     marker.action = marker.ADD
     marker.pose.orientation.w = 1
-    marker.points = [outdoor]
-    marker.scale.x = marker.scale.y = marker.scale.z = 0.4
-    marker.color.a = 1.0
-    marker.color.r = 0.6
-    marker.color.g = 0.0
-    marker.color.b = 0.9
+    if outdoor:
+        marker.points = [outdoor]
+        marker.scale.x = marker.scale.y = marker.scale.z = 0.4
+        marker.color.a = 1.0
+        marker.color.r = 0.6
+        marker.color.g = 0.0
+        marker.color.b = 0.9
     OUTDOOR_MARKER_PUB.publish(marker)
 
 
@@ -201,6 +203,19 @@ def publish_container_entry_arrow(container_entry, header, angle):
         marker.color.a = 1.0
 
     ENTRY_MARKER_PUB.publish(marker)
+
+
+def clear_markers(header):
+    """
+    Resets the outdated markers.
+
+    :param header: point cloud header
+    """
+    publish_corners([], header)
+    publish_outdoor_marker(None, header)
+    publish_container_entry_arrow(None, header, None)
+    publish_container_center_marker(None, header)
+    publish_container_entry_arrow(None, None, None)
 
 
 def get_theta_by_index(idx):
@@ -722,9 +737,7 @@ def detect_container(hough_space, header, corresponding_points):
             publish_detected_container(found_line_params, header, avg_points)
             return lines
 
-    # reset outdated markers
-    publish_corners([], header)
-    publish_container_entry_arrow(None, None, None)
+    clear_markers(header)
     # rospy.loginfo("NOTHING DETECTED!")
     return generate_default_line_marker(header)
 
