@@ -570,15 +570,14 @@ def determine_container_entry(corners, avg_points):
 
 def determine_point_in_front_of_container(corners):
     base_point = Point()
-
-    if dist(corners[0], corners[1]) < dist(corners[0], corners[2]):
-        base_point.x = (corners[0].x + corners[1].x) / 2
-        base_point.y = (corners[0].y + corners[1].y) / 2
-        direction_vector = (corners[1].x - corners[0].x, corners[1].y - corners[0].y)
-    else:
-        base_point.x = (corners[0].x + corners[2].x) / 2
-        base_point.y = (corners[0].y + corners[2].y) / 2
-        direction_vector = (corners[2].x - corners[0].x, corners[2].y - corners[0].y)
+    for i in range(len(corners)):
+        for j in range(len(corners)):
+            if i != j:
+                if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
+                    base_point.x = (corners[i].x + corners[j].x) / 2
+                    base_point.y = (corners[i].y + corners[j].y) / 2
+                    direction_vector = (corners[j].x - corners[i].x, corners[j].y - corners[i].y)
+                    break
 
     length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
     res_vec = (direction_vector[0] / length, direction_vector[1] / length)
@@ -641,10 +640,10 @@ def publish_detected_container(found_line_params, header, avg_points):
 def determine_thresh_based_on_dist_to_robot(dist_to_robot):
     # TODO: to be refined based on experiments
     if dist_to_robot < 3:
-        return 75
+        return 50
     elif dist_to_robot < 5:
         return 15
-    elif dist_to_robot < 8:
+    elif dist_to_robot < 7:
         return 10
     else:
         return 5
@@ -663,7 +662,7 @@ def detect_container(hough_space, header, corresponding_points):
 
     c, r = retrieve_best_line(hough_space)
     point_list = median_filter(np.array(corresponding_points[(c, r)]))
-    dist_to_robot = dist(ROBOT_POS, point_list[0])
+    dist_to_robot = dist(ROBOT_POS, point_list[0]) if len(point_list) > 0 else 10
     dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
 
     base_lines_tested = 0
@@ -678,7 +677,7 @@ def detect_container(hough_space, header, corresponding_points):
         c, r = retrieve_best_line(hough_space)
         point_list = median_filter(np.array(corresponding_points[(c, r)]))
 
-        dist_to_robot = dist(ROBOT_POS, point_list[0])
+        dist_to_robot = dist(ROBOT_POS, point_list[0]) if len(point_list) > 0 else 10
         dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
         rospy.loginfo("DIST TO ROBOT: %s, THRESH: %s", dist_to_robot, dynamic_acc_thresh_based_on_dist)
 
