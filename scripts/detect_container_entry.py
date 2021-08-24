@@ -7,8 +7,18 @@ from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
-from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from arox_docking.msg import DetectAction, DetectResult
+
+# TODO: duplicate
+def dist(p1, p2):
+    """
+    Computes the Euclidean distance between the specified points.
+
+    :param p1: point one
+    :param p2: point two
+    :return: Euclidean distance
+    """
+    return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
 
 CONTAINER_WIDTH = 2.83
 CONTAINER_LENGTH = 3.7
@@ -138,25 +148,6 @@ def publish_corners(intersections, header):
     marker.scale.x = marker.scale.y = marker.scale.z = 0.4
     marker.color.a = marker.color.b = 1.0
     CORNER_MARKER_PUB.publish(marker)
-
-
-# def publish_container_entry(container_entry, header, angle):
-#     """
-#     Publishes the position in front of the container entry where the robot should move to (as pose stamped).
-#
-#     :param container_entry: position in front of the container entry
-#     :param angle: orientation in front of the container
-#     """
-#     global ENTRY_PUB
-#     goal = PoseStamped()
-#     goal.header = header
-#     goal.header.stamp = rospy.Time.now()
-#     goal.pose.position.x = container_entry.x
-#     goal.pose.position.y = container_entry.y
-#     goal.pose.position.z = 0.0
-#     q = quaternion_from_euler(0, 0, angle)
-#     goal.pose.orientation = Quaternion(*q)
-#     ENTRY_PUB.publish(goal)
 
 
 # def publish_container_center(center_point, header, angle):
@@ -488,17 +479,6 @@ def append_and_publish_dbg_points(point_list, header):
     publish_dgb_points(header)
 
 
-def dist(p1, p2):
-    """
-    Computes the Euclidean distance between the specified points.
-
-    :param p1: point one
-    :param p2: point two
-    :return: Euclidean distance
-    """
-    return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
-
-
 def container_front_or_back_detected(length):
     """
     Returns whether the specified length corresponds to the container front / back.
@@ -593,38 +573,6 @@ def retrieve_container_corners(found_line_params):
                     if not p in container_corners:
                         container_corners.append(p)
     return container_corners
-
-
-# def determine_container_entry(corners, avg_points):
-#     """
-#     Determines the container entry based on the detected corners and the average line points.
-#
-#     :param corners: detected container corners
-#     :param avg_points: average points representing detected lines
-#     :return: base point, container entry
-#     """
-#     base_point = Point()
-#     base_point.x = (corners[0].x + corners[1].x) / 2
-#     base_point.y = (corners[0].y + corners[1].y) / 2
-#
-#     direction_vector = (corners[1].x - corners[0].x, corners[1].y - corners[0].y)
-#     length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
-#     res_vec = (direction_vector[0] / length, direction_vector[1] / length)
-#
-#     distance = 2.5
-#     entry_candidate_one = Point()
-#     entry_candidate_one.x = base_point.x - res_vec[1] * distance
-#     entry_candidate_one.y = base_point.y + res_vec[0] * distance
-#     entry_candidate_two = Point()
-#     entry_candidate_two.x = base_point.x + res_vec[1] * distance
-#     entry_candidate_two.y = base_point.y - res_vec[0] * distance
-#
-#     # the one further away from the averages is the position to move to
-#     avg_entry_candidate_one = np.average([dist(entry_candidate_one, p) for p in avg_points])
-#     avg_entry_candidate_two = np.average([dist(entry_candidate_two, p) for p in avg_points])
-#     if avg_entry_candidate_one > avg_entry_candidate_two:
-#         return base_point, entry_candidate_one
-#     return base_point, entry_candidate_two
 
 
 # def determine_point_in_front_of_container(corners):
@@ -780,9 +728,12 @@ def detect_container(hough_space, header, corresponding_points):
             hough_copy[c][r] = 0
 
         if len(found_line_params) >= 3:
-            CORNERS = publish_detected_container(found_line_params, header, avg_points)
-            if len(CORNERS) < 2:
-                CORNERS = None
+            tmp = publish_detected_container(found_line_params, header, avg_points)
+            if len(tmp) >= 2:
+                # always contains the corners AND the avg points for each line -> 2x number of detected corners points
+                CORNERS = tmp
+                for p in avg_points:
+                    CORNERS.append(p)
             return lines
 
     clear_markers(header)

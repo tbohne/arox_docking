@@ -11,6 +11,21 @@ import tf2_geometry_msgs
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal, MoveBaseActionGoal
 from geometry_msgs.msg import PoseStamped
 from arox_docking.msg import DockAction, DetectAction, DetectGoal
+from geometry_msgs.msg import Point, PoseStamped, Quaternion
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
+
+import numpy as np
+import math
+
+def dist(p1, p2):
+    """
+    Computes the Euclidean distance between the specified points.
+
+    :param p1: point one
+    :param p2: point two
+    :return: Euclidean distance
+    """
+    return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
 
 TF_BUFFER = None
 FAILURE = 50
@@ -66,32 +81,72 @@ class DetectContainer(smach.State):
                              input_keys=['detect_container_input'],
                              output_keys=['detect_container_output'])
 
-        # # TODO: subscribed to the 'detect_container_entry' node - check whether this is the best way to do that
-        # self.subscriber = rospy.Subscriber('/container_entry', PoseStamped, self.callback)
-        # self.received_goal = None
+    def determine_container_entry(self, points):
+        """
+        Determines the container entry based on the detected corners and the average line points.
 
-    # def callback(self, data):
-    #     self.received_goal = data
+        :param points: detected container corners + avg points for each line
+        :return: base point, container entry
+        """
+        corners = points[:int(len(points) / 2)]
+        avg_points = points[int(len(points) / 2):]
+
+        base_point = Point()
+        base_point.x = (corners[0].x + corners[1].x) / 2
+        base_point.y = (corners[0].y + corners[1].y) / 2
+
+        direction_vector = (corners[1].x - corners[0].x, corners[1].y - corners[0].y)
+        length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
+        res_vec = (direction_vector[0] / length, direction_vector[1] / length)
+
+        distance = 2.5
+        entry_candidate_one = Point()
+        entry_candidate_one.x = base_point.x - res_vec[1] * distance
+        entry_candidate_one.y = base_point.y + res_vec[0] * distance
+        entry_candidate_two = Point()
+        entry_candidate_two.x = base_point.x + res_vec[1] * distance
+        entry_candidate_two.y = base_point.y - res_vec[0] * distance
+
+        # the one further away from the averages is the position to move to
+        avg_entry_candidate_one = np.average([dist(entry_candidate_one, p) for p in avg_points])
+        avg_entry_candidate_two = np.average([dist(entry_candidate_two, p) for p in avg_points])
+        if avg_entry_candidate_one > avg_entry_candidate_two:
+            return base_point, entry_candidate_one
+        return base_point, entry_candidate_two
+
+    def get_container_entry_with_orientation(self, container_entry, angle):
+        """
+        Publishes the position in front of the container entry where the robot should move to (as pose stamped).
+
+        :param container_entry: position in front of the container entry
+        :param angle: orientation in front of the container
+        """
+        global ENTRY_PUB
+        goal = PoseStamped()
+        goal.header.frame_id = "base_link"
+        goal.header.stamp = rospy.Time.now()
+        goal.pose.position.x = container_entry.x
+        goal.pose.position.y = container_entry.y
+        goal.pose.position.z = 0.0
+        q = quaternion_from_euler(0, 0, angle)
+        goal.pose.orientation = Quaternion(*q)
+        return goal
 
     def execute(self, userdata):
         rospy.loginfo('executing state DETECT_CONTAINER')
-        #
-        # if self.received_goal:
-        #     rospy.loginfo("detected entry: %s", self.received_goal)
-        #     userdata.detect_container_output = self.received_goal
-        #     return 'succeeded'
-        # return 'aborted'
 
         client = actionlib.SimpleActionClient('detect_container', DetectAction)
         client.wait_for_server()
         goal = DetectGoal()
         client.send_goal(goal)
         client.wait_for_result()
-        res = client.get_result()
+        res = client.get_result().corners
         rospy.loginfo("RESULT: %s", res)
         if res:
             rospy.loginfo("detected entry: %s", res)
-            userdata.detect_container_output = res
+            base_point, container_entry = self.determine_container_entry(res)
+            angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
+            userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
             return 'succeeded'
         return 'aborted'
 
