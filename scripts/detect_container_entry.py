@@ -150,19 +150,6 @@ def publish_corners(intersections, header):
     CORNER_MARKER_PUB.publish(marker)
 
 
-# def publish_container_center(center_point, header, angle):
-#     global CENTER_PUB
-#     center = PoseStamped()
-#     center.header = header
-#     center.header.stamp = rospy.Time.now()
-#     center.pose.position.x = center_point.x
-#     center.pose.position.y = center_point.y
-#     center.pose.position.z = 0.0
-#     q = quaternion_from_euler(0, 0, angle)
-#     center.pose.orientation = Quaternion(*q)
-#     CENTER_PUB.publish(center)
-
-
 # def publish_outdoor_point(outdoor_point, header):
 #     global OUTDOOR_PUB
 #     outdoor = PoseStamped()
@@ -573,28 +560,6 @@ def retrieve_container_corners(found_line_params):
                     if not p in container_corners:
                         container_corners.append(p)
     return container_corners
-
-
-# def determine_point_in_front_of_container(corners):
-#     base_point = Point()
-#     for i in range(len(corners)):
-#         for j in range(len(corners)):
-#             if i != j:
-#                 if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
-#                     base_point.x = (corners[i].x + corners[j].x) / 2
-#                     base_point.y = (corners[i].y + corners[j].y) / 2
-#                     direction_vector = (corners[j].x - corners[i].x, corners[j].y - corners[i].y)
-#                     break
-#
-#     length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
-#     res_vec = (direction_vector[0] / length, direction_vector[1] / length)
-#
-#     distance = CONTAINER_LENGTH * 1.5
-#     outdoor = Point()
-#     outdoor.x = base_point.x - res_vec[1] * distance
-#     outdoor.y = base_point.y + res_vec[0] * distance
-#
-#     return outdoor
 
 
 def publish_detected_container(found_line_params, header, avg_points):

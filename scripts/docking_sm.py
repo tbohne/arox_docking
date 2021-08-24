@@ -27,6 +27,31 @@ def dist(p1, p2):
     """
     return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
 
+CONTAINER_WIDTH = 2.83
+CONTAINER_LENGTH = 3.7
+EPSILON = 0.2
+
+def determine_point_in_front_of_container(corners):
+    base_point = Point()
+    for i in range(len(corners)):
+        for j in range(len(corners)):
+            if i != j:
+                if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
+                    base_point.x = (corners[i].x + corners[j].x) / 2
+                    base_point.y = (corners[i].y + corners[j].y) / 2
+                    direction_vector = (corners[j].x - corners[i].x, corners[j].y - corners[i].y)
+                    break
+
+    length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
+    res_vec = (direction_vector[0] / length, direction_vector[1] / length)
+
+    distance = CONTAINER_LENGTH * 1.5
+    outdoor = Point()
+    outdoor.x = base_point.x - res_vec[1] * distance
+    outdoor.y = base_point.y + res_vec[0] * distance
+
+    return outdoor
+
 TF_BUFFER = None
 FAILURE = 50
 CENTER_DETECTION_ATTEMPTS = 30
@@ -190,14 +215,8 @@ class DriveIntoContainer(smach.State):
                              input_keys=['drive_into_container_input'],
                              output_keys=['drive_into_container_output'])
 
-        self.received_goal = None
-        self.subscriber = None
-
-    def callback(self, data):
-        self.received_goal = data
-
-    def drive_in(self):
-        pose_stamped = transform_pose(self.received_goal, 'map')
+    def drive_in(self, center_pos):
+        pose_stamped = transform_pose(center_pos, 'map')
         move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
         move_base_client.wait_for_server()
 
@@ -217,21 +236,49 @@ class DriveIntoContainer(smach.State):
             return False
         return True
 
+    def compute_center(self, center_point, angle):
+        center = PoseStamped()
+        center.header.frame_id = "base_link"
+        center.header.stamp = rospy.Time.now()
+        center.pose.position.x = center_point.x
+        center.pose.position.y = center_point.y
+        center.pose.position.z = 0.0
+        q = quaternion_from_euler(0, 0, angle)
+        center.pose.orientation = Quaternion(*q)
+        return center
+
     def execute(self, userdata):
         rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
-        cnt = 0
-        self.subscriber = rospy.Subscriber('/center', PoseStamped, self.callback)
 
-        while cnt < CENTER_DETECTION_ATTEMPTS:
-            if self.received_goal:
-                rospy.loginfo("detected center: %s", self.received_goal)
-                if self.drive_in():
+        client = actionlib.SimpleActionClient('detect_container', DetectAction)
+        client.wait_for_server()
+        goal = DetectGoal()
+        client.send_goal(goal)
+        client.wait_for_result()
+        res = client.get_result().corners
+        rospy.loginfo("RESULT: %s", res)
+
+        # 4 corners + 4 avg points
+        if res and len(res) == 8:
+            rospy.loginfo("CONTAINER DETECTED!")
+
+            container_corners = res[:4]
+
+            center = Point()
+            center.x = np.average([p.x for p in container_corners])
+            center.y = np.average([p.y for p in container_corners])
+
+            outdoor = determine_point_in_front_of_container(container_corners)
+            angle = math.atan2(outdoor.y - center.y, outdoor.x - center.x)
+            center_res = self.compute_center(center, angle)
+
+            if center_res:
+                rospy.loginfo("detected center: %s", center_res)
+                if self.drive_in(center_res):
                     userdata.drive_into_container_output = get_success_msg()
                     return 'succeeded'
                 userdata.drive_into_container_output = get_failure_msg()
                 return 'aborted'
-            rospy.sleep(2)
-            cnt += 1
         userdata.drive_into_container_output = get_failure_msg()
         return 'aborted'
 
