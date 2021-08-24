@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 import rospy
 import math
+import actionlib
 import numpy as np
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
+from arox_docking.msg import DetectAction, DetectResult
 
 CONTAINER_WIDTH = 2.83
 CONTAINER_LENGTH = 3.7
@@ -14,13 +16,14 @@ EPSILON = 0.2
 
 HOUGH_LINE_PUB = None
 CORNER_MARKER_PUB = None
-ENTRY_MARKER_PUB = None
-CENTER_MARKER_PUB = None
-OUTDOOR_MARKER_PUB = None
+#ENTRY_MARKER_PUB = None
+#CENTER_MARKER_PUB = None
+#OUTDOOR_MARKER_PUB = None
 DBG_PUB = None
-ENTRY_PUB = None
-CENTER_PUB = None
-OUTDOOR_PUB = None
+#ENTRY_PUB = None
+#CENTER_PUB = None
+#OUTDOOR_PUB = None
+CORNERS = None
 
 DBG_POINTS = []
 ROBOT_POS = None
@@ -35,6 +38,47 @@ RADIUS_MIN = -10.0
 RADIUS_MAX = 10.0
 # TODO: distance to robot pos should be considered for the ACC_THRESH
 ACC_THRESHOLD = 15
+
+
+class DetectServer:
+    def __init__(self):
+        self.server = actionlib.SimpleActionServer('detect_container', DetectAction, self.execute, False)
+        self.server.start()
+
+    def execute(self, goal):
+        # do stuff
+        global HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, CORNERS#, ENTRY_MARKER_PUB, ENTRY_PUB, CENTER_PUB, CENTER_MARKER_PUB, OUTDOOR_MARKER_PUB, OUTDOOR_PUB
+
+        HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
+        CORNER_MARKER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
+        # ENTRY_MARKER_PUB = rospy.Publisher("/entry_point", Marker, queue_size=1)
+        # CENTER_MARKER_PUB = rospy.Publisher("/center_point", Marker, queue_size=1)
+        DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
+        # ENTRY_PUB = rospy.Publisher("/container_entry", PoseStamped, queue_size=1)
+        # CENTER_PUB = rospy.Publisher("/center", PoseStamped, queue_size=1)
+        # OUTDOOR_MARKER_PUB = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
+        # OUTDOOR_PUB = rospy.Publisher("/outdoor", PoseStamped, queue_size=1)
+        # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
+        rospy.Subscriber("/scanVelodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
+        # subscribe to robot pose (ground truth)
+        rospy.Subscriber("/pose_ground_truth", Odometry, odom_callback, queue_size=1)
+
+        attemts = 10
+        cnt = 0
+
+        result = DetectResult()
+
+        while CORNERS is None and cnt < attemts:
+            cnt += 1
+            rospy.sleep(10)
+        if cnt < attemts:
+            rospy.loginfo("CORNER DETECTION SUCCEEDED!!")
+            rospy.loginfo("RES: %s", CORNERS)
+            result.corners = CORNERS
+            self.server.set_succeeded(result)
+        else:
+            rospy.loginfo("CORNER DETECTION FAILED!!")
+            self.server.set_preempted()
 
 
 def generate_default_line_marker(header):
@@ -96,113 +140,113 @@ def publish_corners(intersections, header):
     CORNER_MARKER_PUB.publish(marker)
 
 
-def publish_container_entry(container_entry, header, angle):
-    """
-    Publishes the position in front of the container entry where the robot should move to (as pose stamped).
-
-    :param container_entry: position in front of the container entry
-    :param angle: orientation in front of the container
-    """
-    global ENTRY_PUB
-    goal = PoseStamped()
-    goal.header = header
-    goal.header.stamp = rospy.Time.now()
-    goal.pose.position.x = container_entry.x
-    goal.pose.position.y = container_entry.y
-    goal.pose.position.z = 0.0
-    q = quaternion_from_euler(0, 0, angle)
-    goal.pose.orientation = Quaternion(*q)
-    ENTRY_PUB.publish(goal)
-
-
-def publish_container_center(center_point, header, angle):
-    global CENTER_PUB
-    center = PoseStamped()
-    center.header = header
-    center.header.stamp = rospy.Time.now()
-    center.pose.position.x = center_point.x
-    center.pose.position.y = center_point.y
-    center.pose.position.z = 0.0
-    q = quaternion_from_euler(0, 0, angle)
-    center.pose.orientation = Quaternion(*q)
-    CENTER_PUB.publish(center)
+# def publish_container_entry(container_entry, header, angle):
+#     """
+#     Publishes the position in front of the container entry where the robot should move to (as pose stamped).
+#
+#     :param container_entry: position in front of the container entry
+#     :param angle: orientation in front of the container
+#     """
+#     global ENTRY_PUB
+#     goal = PoseStamped()
+#     goal.header = header
+#     goal.header.stamp = rospy.Time.now()
+#     goal.pose.position.x = container_entry.x
+#     goal.pose.position.y = container_entry.y
+#     goal.pose.position.z = 0.0
+#     q = quaternion_from_euler(0, 0, angle)
+#     goal.pose.orientation = Quaternion(*q)
+#     ENTRY_PUB.publish(goal)
 
 
-def publish_outdoor_point(outdoor_point, header):
-    global OUTDOOR_PUB
-    outdoor = PoseStamped()
-    outdoor.header = header
-    outdoor.header.stamp = rospy.Time.now()
-    outdoor.pose.position.x = outdoor_point.x
-    outdoor.pose.position.y = outdoor_point.y
-    OUTDOOR_PUB.publish(outdoor)
+# def publish_container_center(center_point, header, angle):
+#     global CENTER_PUB
+#     center = PoseStamped()
+#     center.header = header
+#     center.header.stamp = rospy.Time.now()
+#     center.pose.position.x = center_point.x
+#     center.pose.position.y = center_point.y
+#     center.pose.position.z = 0.0
+#     q = quaternion_from_euler(0, 0, angle)
+#     center.pose.orientation = Quaternion(*q)
+#     CENTER_PUB.publish(center)
 
 
-def publish_container_center_marker(center, header):
-    global CENTER_MARKER_PUB
-    marker = Marker()
-    marker.header = header
-    marker.id = 1
-    marker.type = marker.POINTS
-    marker.action = marker.ADD
-    marker.pose.orientation.w = 1
-    if center:
-        marker.points = [center]
-        marker.scale.x = marker.scale.y = marker.scale.z = 0.4
-        marker.color.a = marker.color.g = marker.color.r = 1.0
-    CENTER_MARKER_PUB.publish(marker)
+# def publish_outdoor_point(outdoor_point, header):
+#     global OUTDOOR_PUB
+#     outdoor = PoseStamped()
+#     outdoor.header = header
+#     outdoor.header.stamp = rospy.Time.now()
+#     outdoor.pose.position.x = outdoor_point.x
+#     outdoor.pose.position.y = outdoor_point.y
+#     OUTDOOR_PUB.publish(outdoor)
+#
+#
+# def publish_container_center_marker(center, header):
+#     global CENTER_MARKER_PUB
+#     marker = Marker()
+#     marker.header = header
+#     marker.id = 1
+#     marker.type = marker.POINTS
+#     marker.action = marker.ADD
+#     marker.pose.orientation.w = 1
+#     if center:
+#         marker.points = [center]
+#         marker.scale.x = marker.scale.y = marker.scale.z = 0.4
+#         marker.color.a = marker.color.g = marker.color.r = 1.0
+#     CENTER_MARKER_PUB.publish(marker)
+#
+#
+# def publish_outdoor_marker(outdoor, header):
+#     global OUTDOOR_MARKER_PUB
+#     marker = Marker()
+#     marker.header = header
+#     marker.id = 1
+#     marker.type = marker.POINTS
+#     marker.action = marker.ADD
+#     marker.pose.orientation.w = 1
+#     if outdoor:
+#         marker.points = [outdoor]
+#         marker.scale.x = marker.scale.y = marker.scale.z = 0.4
+#         marker.color.a = 1.0
+#         marker.color.r = 0.6
+#         marker.color.g = 0.0
+#         marker.color.b = 0.9
+#     OUTDOOR_MARKER_PUB.publish(marker)
 
 
-def publish_outdoor_marker(outdoor, header):
-    global OUTDOOR_MARKER_PUB
-    marker = Marker()
-    marker.header = header
-    marker.id = 1
-    marker.type = marker.POINTS
-    marker.action = marker.ADD
-    marker.pose.orientation.w = 1
-    if outdoor:
-        marker.points = [outdoor]
-        marker.scale.x = marker.scale.y = marker.scale.z = 0.4
-        marker.color.a = 1.0
-        marker.color.r = 0.6
-        marker.color.g = 0.0
-        marker.color.b = 0.9
-    OUTDOOR_MARKER_PUB.publish(marker)
-
-
-def publish_container_entry_arrow(container_entry, header, angle):
-    """
-    Publishes the position of the container entry as arrow marker pointing towards the entry.
-
-    :param container_entry: point in front of the container entry
-    :param angle: orientation in front of the container
-    """
-    global ENTRY_MARKER_PUB
-    marker = Marker()
-    if header:
-        marker.header = header
-    marker.id = 1
-    marker.type = Marker.ARROW
-    marker.action = Marker.ADD
-
-    if container_entry:
-        marker.pose.position.x = container_entry.x
-        marker.pose.position.y = container_entry.y
-
-        q = quaternion_from_euler(0, 0, angle)
-        marker.pose.orientation = Quaternion(*q)
-
-        marker.scale.x = 0.75
-        marker.scale.y = 0.2
-        marker.scale.z = 0.0
-
-        marker.color.r = 0
-        marker.color.g = 0
-        marker.color.b = 1.0
-        marker.color.a = 1.0
-
-    ENTRY_MARKER_PUB.publish(marker)
+# def publish_container_entry_arrow(container_entry, header, angle):
+#     """
+#     Publishes the position of the container entry as arrow marker pointing towards the entry.
+#
+#     :param container_entry: point in front of the container entry
+#     :param angle: orientation in front of the container
+#     """
+#     global ENTRY_MARKER_PUB
+#     marker = Marker()
+#     if header:
+#         marker.header = header
+#     marker.id = 1
+#     marker.type = Marker.ARROW
+#     marker.action = Marker.ADD
+#
+#     if container_entry:
+#         marker.pose.position.x = container_entry.x
+#         marker.pose.position.y = container_entry.y
+#
+#         q = quaternion_from_euler(0, 0, angle)
+#         marker.pose.orientation = Quaternion(*q)
+#
+#         marker.scale.x = 0.75
+#         marker.scale.y = 0.2
+#         marker.scale.z = 0.0
+#
+#         marker.color.r = 0
+#         marker.color.g = 0
+#         marker.color.b = 1.0
+#         marker.color.a = 1.0
+#
+#     ENTRY_MARKER_PUB.publish(marker)
 
 
 def clear_markers(header):
@@ -212,10 +256,10 @@ def clear_markers(header):
     :param header: point cloud header
     """
     publish_corners([], header)
-    publish_outdoor_marker(None, header)
-    publish_container_entry_arrow(None, header, None)
-    publish_container_center_marker(None, header)
-    publish_container_entry_arrow(None, None, None)
+    # publish_outdoor_marker(None, header)
+    # publish_container_entry_arrow(None, header, None)
+    # publish_container_center_marker(None, header)
+    # publish_container_entry_arrow(None, None, None)
 
 
 def get_theta_by_index(idx):
@@ -551,58 +595,58 @@ def retrieve_container_corners(found_line_params):
     return container_corners
 
 
-def determine_container_entry(corners, avg_points):
-    """
-    Determines the container entry based on the detected corners and the average line points.
+# def determine_container_entry(corners, avg_points):
+#     """
+#     Determines the container entry based on the detected corners and the average line points.
+#
+#     :param corners: detected container corners
+#     :param avg_points: average points representing detected lines
+#     :return: base point, container entry
+#     """
+#     base_point = Point()
+#     base_point.x = (corners[0].x + corners[1].x) / 2
+#     base_point.y = (corners[0].y + corners[1].y) / 2
+#
+#     direction_vector = (corners[1].x - corners[0].x, corners[1].y - corners[0].y)
+#     length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
+#     res_vec = (direction_vector[0] / length, direction_vector[1] / length)
+#
+#     distance = 2.5
+#     entry_candidate_one = Point()
+#     entry_candidate_one.x = base_point.x - res_vec[1] * distance
+#     entry_candidate_one.y = base_point.y + res_vec[0] * distance
+#     entry_candidate_two = Point()
+#     entry_candidate_two.x = base_point.x + res_vec[1] * distance
+#     entry_candidate_two.y = base_point.y - res_vec[0] * distance
+#
+#     # the one further away from the averages is the position to move to
+#     avg_entry_candidate_one = np.average([dist(entry_candidate_one, p) for p in avg_points])
+#     avg_entry_candidate_two = np.average([dist(entry_candidate_two, p) for p in avg_points])
+#     if avg_entry_candidate_one > avg_entry_candidate_two:
+#         return base_point, entry_candidate_one
+#     return base_point, entry_candidate_two
 
-    :param corners: detected container corners
-    :param avg_points: average points representing detected lines
-    :return: base point, container entry
-    """
-    base_point = Point()
-    base_point.x = (corners[0].x + corners[1].x) / 2
-    base_point.y = (corners[0].y + corners[1].y) / 2
 
-    direction_vector = (corners[1].x - corners[0].x, corners[1].y - corners[0].y)
-    length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
-    res_vec = (direction_vector[0] / length, direction_vector[1] / length)
-
-    distance = 2.5
-    entry_candidate_one = Point()
-    entry_candidate_one.x = base_point.x - res_vec[1] * distance
-    entry_candidate_one.y = base_point.y + res_vec[0] * distance
-    entry_candidate_two = Point()
-    entry_candidate_two.x = base_point.x + res_vec[1] * distance
-    entry_candidate_two.y = base_point.y - res_vec[0] * distance
-
-    # the one further away from the averages is the position to move to
-    avg_entry_candidate_one = np.average([dist(entry_candidate_one, p) for p in avg_points])
-    avg_entry_candidate_two = np.average([dist(entry_candidate_two, p) for p in avg_points])
-    if avg_entry_candidate_one > avg_entry_candidate_two:
-        return base_point, entry_candidate_one
-    return base_point, entry_candidate_two
-
-
-def determine_point_in_front_of_container(corners):
-    base_point = Point()
-    for i in range(len(corners)):
-        for j in range(len(corners)):
-            if i != j:
-                if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
-                    base_point.x = (corners[i].x + corners[j].x) / 2
-                    base_point.y = (corners[i].y + corners[j].y) / 2
-                    direction_vector = (corners[j].x - corners[i].x, corners[j].y - corners[i].y)
-                    break
-
-    length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
-    res_vec = (direction_vector[0] / length, direction_vector[1] / length)
-
-    distance = CONTAINER_LENGTH * 1.5
-    outdoor = Point()
-    outdoor.x = base_point.x - res_vec[1] * distance
-    outdoor.y = base_point.y + res_vec[0] * distance
-
-    return outdoor
+# def determine_point_in_front_of_container(corners):
+#     base_point = Point()
+#     for i in range(len(corners)):
+#         for j in range(len(corners)):
+#             if i != j:
+#                 if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
+#                     base_point.x = (corners[i].x + corners[j].x) / 2
+#                     base_point.y = (corners[i].y + corners[j].y) / 2
+#                     direction_vector = (corners[j].x - corners[i].x, corners[j].y - corners[i].y)
+#                     break
+#
+#     length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
+#     res_vec = (direction_vector[0] / length, direction_vector[1] / length)
+#
+#     distance = CONTAINER_LENGTH * 1.5
+#     outdoor = Point()
+#     outdoor.x = base_point.x - res_vec[1] * distance
+#     outdoor.y = base_point.y + res_vec[0] * distance
+#
+#     return outdoor
 
 
 def publish_detected_container(found_line_params, header, avg_points):
@@ -616,40 +660,42 @@ def publish_detected_container(found_line_params, header, avg_points):
     global ENTRY_PUB
     # rospy.loginfo("parameters of detected lines: %s", found_line_params)
     container_corners = retrieve_container_corners(found_line_params)
-    if len(container_corners) > 0:
-        if len(container_corners) >= 4:
-            # rospy.loginfo("CONTAINER DETECTED!")
 
-            assert len(container_corners) == 4
+    # if len(container_corners) > 0:
+    #     if len(container_corners) >= 4:
+    #         # rospy.loginfo("CONTAINER DETECTED!")
+    #
+    #         assert len(container_corners) == 4
+    #
+    #         # publish container center
+    #         center = Point()
+    #         center.x = np.average([p.x for p in container_corners])
+    #         center.y = np.average([p.y for p in container_corners])
+    #         # rospy.loginfo("publish container center: %s", center)
+    #
+    #         outdoor = determine_point_in_front_of_container(container_corners)
+    #
+    #         # TODO
+    #         angle = math.atan2(outdoor.y - center.y, outdoor.x - center.x)
+    #
+    #         publish_container_center(center, header, angle)
+    #         publish_container_center_marker(center, header)
+    #
+    #         publish_outdoor_marker(outdoor, header)
+    #         publish_outdoor_point(outdoor, header)
+    #
+    #         # TODO: think about reasonable way to determine entry (distinguish front / back)
+    #     elif len(container_corners) >= 2:
+    #         # rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
+    #
+    #         base_point, container_entry = determine_container_entry(container_corners, avg_points)
+    #         angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
+    #
+    #         publish_container_entry_arrow(container_entry, header, angle)
+    #         publish_container_entry(container_entry, header, angle)
 
-            # publish container center
-            center = Point()
-            center.x = np.average([p.x for p in container_corners])
-            center.y = np.average([p.y for p in container_corners])
-            # rospy.loginfo("publish container center: %s", center)
-
-            outdoor = determine_point_in_front_of_container(container_corners)
-
-            # TODO
-            angle = math.atan2(outdoor.y - center.y, outdoor.x - center.x)
-
-            publish_container_center(center, header, angle)
-            publish_container_center_marker(center, header)
-
-            publish_outdoor_marker(outdoor, header)
-            publish_outdoor_point(outdoor, header)
-
-            # TODO: think about reasonable way to determine entry (distinguish front / back)
-        elif len(container_corners) >= 2:
-            # rospy.loginfo("CONTAINER FRONT OR BACK DETECTED!")
-
-            base_point, container_entry = determine_container_entry(container_corners, avg_points)
-            angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
-
-            publish_container_entry_arrow(container_entry, header, angle)
-            publish_container_entry(container_entry, header, angle)
-
-        publish_corners(container_corners, header)
+    publish_corners(container_corners, header)
+    return container_corners
 
 
 def determine_thresh_based_on_dist_to_robot(dist_to_robot):
@@ -673,7 +719,7 @@ def detect_container(hough_space, header, corresponding_points):
     :param corresponding_points: dictionary containing a list of points corresponding to each (rad, theta) combination
     :return: line marker representing the container sides
     """
-    global DBG_POINTS
+    global DBG_POINTS, CORNERS
 
     c, r = retrieve_best_line(hough_space)
     point_list = median_filter(np.array(corresponding_points[(c, r)]))
@@ -734,7 +780,9 @@ def detect_container(hough_space, header, corresponding_points):
             hough_copy[c][r] = 0
 
         if len(found_line_params) >= 3:
-            publish_detected_container(found_line_params, header, avg_points)
+            CORNERS = publish_detected_container(found_line_params, header, avg_points)
+            if len(CORNERS) < 2:
+                CORNERS = None
             return lines
 
     clear_markers(header)
@@ -814,23 +862,8 @@ def node():
     """
     Node to detect the container entry in a point cloud.
     """
-    global HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, ENTRY_MARKER_PUB, ENTRY_PUB, CENTER_PUB, CENTER_MARKER_PUB, OUTDOOR_MARKER_PUB, OUTDOOR_PUB
-
     rospy.init_node("detect_container_entry")
-    HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
-    CORNER_MARKER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
-    ENTRY_MARKER_PUB = rospy.Publisher("/entry_point", Marker, queue_size=1)
-    CENTER_MARKER_PUB = rospy.Publisher("/center_point", Marker, queue_size=1)
-    DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
-    ENTRY_PUB = rospy.Publisher("/container_entry", PoseStamped, queue_size=1)
-    CENTER_PUB = rospy.Publisher("/center", PoseStamped, queue_size=1)
-    OUTDOOR_MARKER_PUB = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
-    OUTDOOR_PUB = rospy.Publisher("/outdoor", PoseStamped, queue_size=1)
-    # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
-    rospy.Subscriber("/scanVelodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
-    # subscribe to robot pose (ground truth)
-    rospy.Subscriber("/pose_ground_truth", Odometry, odom_callback, queue_size=1)
-
+    server = DetectServer()
     rospy.spin()
 
 

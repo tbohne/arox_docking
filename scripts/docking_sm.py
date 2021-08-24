@@ -10,7 +10,7 @@ import tf2_geometry_msgs
 
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal, MoveBaseActionGoal
 from geometry_msgs.msg import PoseStamped
-from arox_docking.msg import DockAction
+from arox_docking.msg import DockAction, DetectAction, DetectGoal
 
 TF_BUFFER = None
 FAILURE = 50
@@ -66,19 +66,32 @@ class DetectContainer(smach.State):
                              input_keys=['detect_container_input'],
                              output_keys=['detect_container_output'])
 
-        # TODO: subscribed to the 'detect_container_entry' node - check whether this is the best way to do that
-        self.subscriber = rospy.Subscriber('/container_entry', PoseStamped, self.callback)
-        self.received_goal = None
+        # # TODO: subscribed to the 'detect_container_entry' node - check whether this is the best way to do that
+        # self.subscriber = rospy.Subscriber('/container_entry', PoseStamped, self.callback)
+        # self.received_goal = None
 
-    def callback(self, data):
-        self.received_goal = data
+    # def callback(self, data):
+    #     self.received_goal = data
 
     def execute(self, userdata):
         rospy.loginfo('executing state DETECT_CONTAINER')
+        #
+        # if self.received_goal:
+        #     rospy.loginfo("detected entry: %s", self.received_goal)
+        #     userdata.detect_container_output = self.received_goal
+        #     return 'succeeded'
+        # return 'aborted'
 
-        if self.received_goal:
-            rospy.loginfo("detected entry: %s", self.received_goal)
-            userdata.detect_container_output = self.received_goal
+        client = actionlib.SimpleActionClient('detect_container', DetectAction)
+        client.wait_for_server()
+        goal = DetectGoal()
+        client.send_goal(goal)
+        client.wait_for_result()
+        res = client.get_result()
+        rospy.loginfo("RESULT: %s", res)
+        if res:
+            rospy.loginfo("detected entry: %s", res)
+            userdata.detect_container_output = res
             return 'succeeded'
         return 'aborted'
 
