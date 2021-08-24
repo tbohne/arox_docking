@@ -250,35 +250,40 @@ class DriveIntoContainer(smach.State):
     def execute(self, userdata):
         rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
 
-        client = actionlib.SimpleActionClient('detect_container', DetectAction)
-        client.wait_for_server()
-        goal = DetectGoal()
-        client.send_goal(goal)
-        client.wait_for_result()
-        res = client.get_result().corners
-        rospy.loginfo("RESULT: %s", res)
+        attempts = 5
+        cnt = 0
+        while cnt < attempts:
+            cnt += 1
+            client = actionlib.SimpleActionClient('detect_container', DetectAction)
+            client.wait_for_server()
+            goal = DetectGoal()
+            client.send_goal(goal)
+            client.wait_for_result()
+            res = client.get_result().corners
+            rospy.loginfo("RESULT: %s", res)
 
-        # 4 corners + 4 avg points
-        if res and len(res) == 8:
-            rospy.loginfo("CONTAINER DETECTED!")
+            # 4 corners + 4 avg points
+            if res and len(res) == 8:
+                rospy.loginfo("CONTAINER DETECTED!")
 
-            container_corners = res[:4]
+                container_corners = res[:4]
 
-            center = Point()
-            center.x = np.average([p.x for p in container_corners])
-            center.y = np.average([p.y for p in container_corners])
+                center = Point()
+                center.x = np.average([p.x for p in container_corners])
+                center.y = np.average([p.y for p in container_corners])
 
-            outdoor = determine_point_in_front_of_container(container_corners)
-            angle = math.atan2(outdoor.y - center.y, outdoor.x - center.x)
-            center_res = self.compute_center(center, angle)
+                outdoor = determine_point_in_front_of_container(container_corners)
+                angle = math.atan2(outdoor.y - center.y, outdoor.x - center.x)
+                center_res = self.compute_center(center, angle)
 
-            if center_res:
-                rospy.loginfo("detected center: %s", center_res)
-                if self.drive_in(center_res):
-                    userdata.drive_into_container_output = get_success_msg()
-                    return 'succeeded'
-                userdata.drive_into_container_output = get_failure_msg()
-                return 'aborted'
+                if center_res:
+                    rospy.loginfo("detected center: %s", center_res)
+                    if self.drive_in(center_res):
+                        userdata.drive_into_container_output = get_success_msg()
+                        return 'succeeded'
+                    userdata.drive_into_container_output = get_failure_msg()
+                    return 'aborted'
+        rospy.loginfo("NUMBER OF CORNERS: %s", len(res))
         userdata.drive_into_container_output = get_failure_msg()
         return 'aborted'
 

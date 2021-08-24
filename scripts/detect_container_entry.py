@@ -30,6 +30,8 @@ CORNER_MARKER_PUB = None
 #CENTER_MARKER_PUB = None
 #OUTDOOR_MARKER_PUB = None
 DBG_PUB = None
+SCAN_SUB = None
+POSE_SUB = None
 #ENTRY_PUB = None
 #CENTER_PUB = None
 #OUTDOOR_PUB = None
@@ -57,7 +59,9 @@ class DetectServer:
 
     def execute(self, goal):
         # do stuff
-        global HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, CORNERS#, ENTRY_MARKER_PUB, ENTRY_PUB, CENTER_PUB, CENTER_MARKER_PUB, OUTDOOR_MARKER_PUB, OUTDOOR_PUB
+        global SCAN_SUB, POSE_SUB, HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, CORNERS#, ENTRY_MARKER_PUB, ENTRY_PUB, CENTER_PUB, CENTER_MARKER_PUB, OUTDOOR_MARKER_PUB, OUTDOOR_PUB
+
+        CORNERS = None
 
         HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
         CORNER_MARKER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
@@ -69,25 +73,29 @@ class DetectServer:
         # OUTDOOR_MARKER_PUB = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
         # OUTDOOR_PUB = rospy.Publisher("/outdoor", PoseStamped, queue_size=1)
         # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
-        rospy.Subscriber("/scanVelodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
+        SCAN_SUB = rospy.Subscriber("/scanVelodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
         # subscribe to robot pose (ground truth)
-        rospy.Subscriber("/pose_ground_truth", Odometry, odom_callback, queue_size=1)
+        POSE_SUB = rospy.Subscriber("/pose_ground_truth", Odometry, odom_callback, queue_size=1)
 
-        attemts = 10
+        attempts = 10
         cnt = 0
 
         result = DetectResult()
 
-        while CORNERS is None and cnt < attemts:
+        while CORNERS is None and cnt < attempts:
             cnt += 1
             rospy.sleep(10)
-        if cnt < attemts:
+        if cnt < attempts:
             rospy.loginfo("CORNER DETECTION SUCCEEDED!!")
+            SCAN_SUB.unregister()
+            POSE_SUB.unregister()
             rospy.loginfo("RES: %s", CORNERS)
             result.corners = CORNERS
             self.server.set_succeeded(result)
         else:
             rospy.loginfo("CORNER DETECTION FAILED!!")
+            SCAN_SUB.unregister()
+            POSE_SUB.unregister()
             self.server.set_preempted()
 
 
