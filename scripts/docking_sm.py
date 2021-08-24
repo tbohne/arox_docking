@@ -94,11 +94,8 @@ class AlignRobotToRamp(smach.State):
 
         if userdata.align_robot_to_ramp_input:
             rospy.loginfo("got userdata: %s", userdata.align_robot_to_ramp_input)
-
             pose_stamped = userdata.align_robot_to_ramp_input
-
-            pose_stamped = transform_pose(pose_stamped, 'map')
-
+            pose_stamped = transform_pose(pose_stamped, "map")
             move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
             move_base_client.wait_for_server()
 
