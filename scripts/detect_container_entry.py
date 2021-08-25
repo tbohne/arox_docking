@@ -2,7 +2,7 @@
 import actionlib
 import numpy as np
 import rospy
-from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON
+from arox_docking import config
 from arox_docking.msg import DetectAction, DetectResult
 from arox_docking.msg import PointArray
 from arox_docking.util import dist
@@ -19,18 +19,6 @@ CORNER_PUB = None
 DBG_PUB = None
 CLEAR_PUB = None
 ROBOT_POS = None
-
-DELTA_THETA = 2
-THETA_MIN = 0
-THETA_MAX = 180
-# should be sufficiently precise to identify reasonable lines
-DELTA_RADIUS = 0.02
-# TODO: check sensor range
-RADIUS_MIN = -10.0
-RADIUS_MAX = 10.0
-# TODO: distance to robot pos should be considered for the ACC_THRESH
-ACC_THRESHOLD = 15
-
 
 class DetectServer:
     def __init__(self):
@@ -81,7 +69,7 @@ def get_theta_by_index(idx):
     :param idx: index to retrieve theta value for
     :return: theta value for specified index
     """
-    return idx * DELTA_THETA + THETA_MIN
+    return idx * config.DELTA_THETA + config.THETA_MIN
 
 
 def get_radius_by_index(idx):
@@ -91,7 +79,7 @@ def get_radius_by_index(idx):
     :param idx: index to retrieve radius value for
     :return: radius value for specified index
     """
-    return idx * DELTA_RADIUS + RADIUS_MIN
+    return idx * config.DELTA_RADIUS + config.RADIUS_MIN
 
 
 def compute_y_coordinate(theta, radius, x):
@@ -151,7 +139,7 @@ def median_filter(points_on_line):
     median = Point()
     median.x = np.median(np.sort([p.x for p in points_on_line]))
     median.y = np.median(np.sort([p.y for p in points_on_line]))
-    return [p for p in points_on_line if dist(p, median) <= CONTAINER_LENGTH]
+    return [p for p in points_on_line if dist(p, median) <= config.CONTAINER_LENGTH]
 
 
 def compute_avg_and_max_distance(point_list):
@@ -181,7 +169,7 @@ def reasonable_dist_to_already_detected_lines(point_list, avg_points):
     avg.x = np.average([p.x for p in point_list])
     avg.y = np.average([p.y for p in point_list])
     for p in avg_points:
-        if dist(avg, p) > CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON or dist(avg, p) < CONTAINER_WIDTH / 2:
+        if dist(avg, p) > config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON or dist(avg, p) < config.CONTAINER_WIDTH / 2:
             return False
     return True
 
@@ -223,12 +211,12 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points):
     orthogonal_to_base = diff < 2 or 88 < diff < 92 or 178 < diff < 182 or 268 < diff < 272
     avg_dist, max_dist = compute_avg_and_max_distance(point_list)
     reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
-    tolerated_length = CONTAINER_LENGTH + CONTAINER_LENGTH * EPSILON * 2
+    tolerated_length = config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON * 2
     # shouldn't be too restrictive at the lower bound (partially detected lines etc.)
     reasonable_len = tolerated_length >= max_dist >= 0.5
 
     # TODO: perhaps not so useful
-    reasonable_avg_distances = CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
+    reasonable_avg_distances = config.CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
     jumps = False  # detect_jumps(point_list)
 
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and not jumps
@@ -280,7 +268,7 @@ def already_tested_base_line(tested_base_lines, radius, theta):
     for r, t in tested_base_lines:
         diff_r = abs(abs(radius) - abs(r))
         diff_t = abs(abs(theta) - abs(t))
-        if diff_r < DELTA_RADIUS * 10 and diff_t < 60:
+        if diff_r < config.DELTA_RADIUS * 10 and diff_t < 60:
             return True
     return False
 
@@ -292,7 +280,7 @@ def container_front_or_back_detected(length):
     :param length: length to be compared to the container dimensions
     :return: whether the length corresponds to the container front / back
     """
-    return length - CONTAINER_WIDTH * EPSILON <= CONTAINER_WIDTH <= length + CONTAINER_WIDTH * EPSILON
+    return length - config.CONTAINER_WIDTH * config.EPSILON <= config.CONTAINER_WIDTH <= length + config.CONTAINER_WIDTH * config.EPSILON
 
 
 def intersection(line1, line2):
@@ -339,7 +327,7 @@ def line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, fou
     for r, t in found_line_params:
         # "equal" radius -> angle has to be different
         # TODO: check whether 4 is appropriate
-        if abs(abs(r) - abs(radius)) < DELTA_RADIUS * 4:
+        if abs(abs(r) - abs(radius)) < config.DELTA_RADIUS * 4:
             # angle too close -> no container side
             if abs(theta - t) < 60 or 120 < abs(theta - t) < 240:
                 return False
@@ -352,11 +340,11 @@ def line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, fou
         for j in intersections:
             if p != j:
                 d = dist(p, j)
-                width_eps = CONTAINER_WIDTH * EPSILON
-                length_eps = CONTAINER_LENGTH * EPSILON
-                tolerated_width = CONTAINER_WIDTH - width_eps < d < CONTAINER_WIDTH + width_eps
+                width_eps = config.CONTAINER_WIDTH * config.EPSILON
+                length_eps = config.CONTAINER_LENGTH * config.EPSILON
+                tolerated_width = config.CONTAINER_WIDTH - width_eps < d < config.CONTAINER_WIDTH + width_eps
                 # TODO: check hard coded additional length_eps -> was necessary occasionally
-                tolerated_length = CONTAINER_LENGTH - length_eps < d < CONTAINER_LENGTH + length_eps * 2
+                tolerated_length = config.CONTAINER_LENGTH - length_eps < d < config.CONTAINER_LENGTH + length_eps * 2
                 if not tolerated_width and not tolerated_length:
                     return False
     return True
@@ -521,8 +509,8 @@ def scan_callback(scan):
     # rospy.loginfo("receiving laser scan..")
     # rospy.loginfo("seq: %s", scan.header.seq)
 
-    theta_values = np.deg2rad(np.arange(THETA_MIN, THETA_MAX, DELTA_THETA, dtype=np.double))
-    r_values = np.arange(RADIUS_MIN, RADIUS_MAX, DELTA_RADIUS, dtype=np.double)
+    theta_values = np.deg2rad(np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
+    r_values = np.arange(config.RADIUS_MIN, config.RADIUS_MAX, config.DELTA_RADIUS, dtype=np.double)
     # precompute sines and cosines
     cosines = np.cos(theta_values)
     sines = np.sin(theta_values)
@@ -540,9 +528,9 @@ def scan_callback(scan):
         if not np.isnan(x) and not np.isnan(y):
             for theta_idx, (cos_theta, sin_theta) in enumerate(zip(cosines, sines)):
                 r = x * cos_theta + y * sin_theta
-                if r < RADIUS_MIN or r > RADIUS_MAX:
+                if r < config.RADIUS_MIN or r > config.RADIUS_MAX:
                     continue
-                r_idx = int((r - RADIUS_MIN) / DELTA_RADIUS)
+                r_idx = int((r - config.RADIUS_MIN) / config.DELTA_RADIUS)
                 hough_space[r_idx][theta_idx] += 1
                 p = Point()
                 p.x = x
