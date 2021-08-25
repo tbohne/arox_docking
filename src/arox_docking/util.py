@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import math
 
+
 def dist(p1, p2):
     """
     Computes the Euclidean distance between the specified points.

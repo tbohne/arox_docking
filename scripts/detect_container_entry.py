@@ -9,16 +9,7 @@ from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from arox_docking.msg import DetectAction, DetectResult
 
-# TODO: duplicate
-def dist(p1, p2):
-    """
-    Computes the Euclidean distance between the specified points.
-
-    :param p1: point one
-    :param p2: point two
-    :return: Euclidean distance
-    """
-    return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
+from arox_docking.util import dist
 
 CONTAINER_WIDTH = 2.83
 CONTAINER_LENGTH = 3.7
@@ -570,7 +561,8 @@ def detect_container(hough_space, header, corresponding_points):
             point_list = median_filter(np.array(corresponding_points[(c, r)]))
             theta = get_theta_by_index(r)
 
-            if line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius, dynamic_acc_thresh_based_on_dist):
+            if line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius,
+                                             dynamic_acc_thresh_based_on_dist):
                 append_and_publish_dbg_points(point_list, header)
                 append_line_points(theta, radius, lines)
                 found_line_params.append((radius, theta))

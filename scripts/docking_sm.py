@@ -15,29 +15,23 @@ from arox_docking.msg import DockAction, DetectAction, DetectGoal
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
+from arox_docking.util import dist
+
 import numpy as np
 import math
-
-def dist(p1, p2):
-    """
-    Computes the Euclidean distance between the specified points.
-
-    :param p1: point one
-    :param p2: point two
-    :return: Euclidean distance
-    """
-    return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
 
 CONTAINER_WIDTH = 2.83
 CONTAINER_LENGTH = 3.7
 EPSILON = 0.2
+
 
 def determine_point_in_front_of_container(corners):
     base_point = Point()
     for i in range(len(corners)):
         for j in range(len(corners)):
             if i != j:
-                if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
+                if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[
+                    j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
                     base_point.x = (corners[i].x + corners[j].x) / 2
                     base_point.y = (corners[i].y + corners[j].y) / 2
                     direction_vector = (corners[j].x - corners[i].x, corners[j].y - corners[i].y)
@@ -52,6 +46,7 @@ def determine_point_in_front_of_container(corners):
     outdoor.y = base_point.y + res_vec[0] * distance
 
     return outdoor
+
 
 TF_BUFFER = None
 FAILURE = 50
