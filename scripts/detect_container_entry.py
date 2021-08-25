@@ -11,55 +11,203 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 
-SCAN_SUB = None
-POSE_SUB = None
-CORNERS = None
-LINE_PUB = None
-CORNER_PUB = None
-DBG_PUB = None
-CLEAR_PUB = None
-ROBOT_POS = None
 
-class DetectServer:
+class DetectionServer:
+    """
+    Simple action server that detects the container in a laser scan using a Hough transform.
+    """
+
     def __init__(self):
         self.server = actionlib.SimpleActionServer('detect_container', DetectAction, self.execute, False)
         self.server.start()
+        self.scan_sub = None
+        self.pose_sub = None
+        self.line_pub = None
+        self.corner_pub = None
+        self.dbg_pub = None
+        self.clear_pub = None
+        self.corners = None
+        self.robot_pos = None
 
     def execute(self, goal):
-        # do stuff
-        global SCAN_SUB, POSE_SUB, CORNERS, LINE_PUB, CORNER_PUB, DBG_PUB, CLEAR_PUB
+        """
+        Executes the action server.
 
-        CORNERS = None
+        :param goal: goal to be performed (dummy atm)
+        """
+        # reset detected corners
+        self.corners = None
         # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
-        SCAN_SUB = rospy.Subscriber("/scanVelodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
+        self.scan_sub = rospy.Subscriber("/scanVelodyne", LaserScan, self.scan_callback, queue_size=1,
+                                         buff_size=2 ** 32)
         # subscribe to robot pose (ground truth)
-        POSE_SUB = rospy.Subscriber("/pose_ground_truth", Odometry, odom_callback, queue_size=1)
+        self.pose_sub = rospy.Subscriber("/pose_ground_truth", Odometry, self.odom_callback, queue_size=1)
 
-        LINE_PUB = rospy.Publisher("/publish_lines", PointArray, queue_size=1)
-        CORNER_PUB = rospy.Publisher("/publish_corners", PointArray, queue_size=1)
-        DBG_PUB = rospy.Publisher("/publish_dbg", PointArray, queue_size=1)
-        CLEAR_PUB = rospy.Publisher("/clear_markers", String, queue_size=1)
+        # publishers for debugging markers (visualizations)
+        self.line_pub = rospy.Publisher("/publish_lines", PointArray, queue_size=1)
+        self.corner_pub = rospy.Publisher("/publish_corners", PointArray, queue_size=1)
+        self.dbg_pub = rospy.Publisher("/publish_dbg", PointArray, queue_size=1)
+        self.clear_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
+        # TODO: several attempts useful here?
         attempts = 10
         cnt = 0
-
         result = DetectResult()
 
-        while CORNERS is None and cnt < attempts:
+        while self.corners is None and cnt < attempts:
             cnt += 1
             rospy.sleep(10)
         if cnt < attempts:
             rospy.loginfo("CORNER DETECTION SUCCEEDED!!")
-            SCAN_SUB.unregister()
-            POSE_SUB.unregister()
-            rospy.loginfo("RES: %s", CORNERS)
-            result.corners = CORNERS
+            self.scan_sub.unregister()
+            self.pose_sub.unregister()
+            rospy.loginfo("RES: %s", self.corners)
+            result.corners = self.corners
             self.server.set_succeeded(result)
         else:
             rospy.loginfo("CORNER DETECTION FAILED!!")
-            SCAN_SUB.unregister()
-            POSE_SUB.unregister()
+            self.scan_sub.unregister()
+            self.pose_sub.unregister()
             self.server.set_preempted()
+
+    def detect_container(self, hough_space, points):
+        """
+        Detects the container based on lines in the specified hough space.
+
+        :param hough_space: result of the hough transform of the laser scan
+        :param points: dictionary containing a list of points corresponding to each (rad, theta) combination
+        """
+        c, r = retrieve_best_line(hough_space)
+        point_list = median_filter(np.array(points[(c, r)]))
+        dist_to_robot = dist(self.robot_pos, point_list[0]) if len(point_list) > 0 else 10
+        dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
+
+        base_lines_tested = 0
+        base_attempts = 0
+        tested_base_lines = []
+
+        while hough_space.max() > dynamic_acc_thresh_based_on_dist and base_lines_tested < 10 and base_attempts < 50:
+            self.dbg_pub.publish([])
+            self.line_pub.publish([])
+            # rospy.loginfo("testing new base line with %s points", hough_space.max())
+            # base line parameters
+            c, r = retrieve_best_line(hough_space)
+            point_list = median_filter(np.array(points[(c, r)]))
+
+            dist_to_robot = dist(self.robot_pos, point_list[0]) if len(point_list) > 0 else 10
+            dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
+            # rospy.loginfo("DIST TO ROBOT: %s, THRESH: %s", dist_to_robot, dynamic_acc_thresh_based_on_dist)
+
+            theta_base = get_theta_by_index(r)
+            radius = get_radius_by_index(c)
+            already_tested = already_tested_base_line(tested_base_lines, radius, theta_base)
+            reasonable_line = detected_reasonable_line(point_list, None, theta_base, [])
+
+            if already_tested or len(point_list) <= dynamic_acc_thresh_based_on_dist or not reasonable_line:
+                hough_space[c][r] = 0
+                base_attempts += 1
+                # rospy.loginfo("base attempt: %s", base_attempts)
+                continue
+
+            # visualize base line
+            self.dbg_pub.publish(point_list)
+            p1, p2 = compute_line_points(theta_base, radius)
+            self.line_pub.publish([p1, p2])
+
+            found_line_params = [(radius, theta_base)]
+            avg_points = []
+            update_avg_points(avg_points, point_list)
+            hough_space[c][r] = 0
+            hough_copy = hough_space.copy()
+            base_lines_tested += 1
+            tested_base_lines.append((radius, theta_base))
+
+            # detect remaining 2-3 sides
+            while len(found_line_params) < 4 and hough_copy.max() > dynamic_acc_thresh_based_on_dist:
+                c, r = retrieve_best_line(hough_copy)
+                radius = get_radius_by_index(c)
+                point_list = median_filter(np.array(points[(c, r)]))
+                theta = get_theta_by_index(r)
+
+                if line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius,
+                                                 dynamic_acc_thresh_based_on_dist):
+                    self.dbg_pub.publish(point_list)
+                    p1, p2 = compute_line_points(theta, radius)
+                    found_line_params.append((radius, theta))
+                    update_avg_points(avg_points, point_list)
+                hough_copy[c][r] = 0
+
+            if len(found_line_params) >= 3:
+                tmp = self.publish_detected_container(found_line_params)
+                if len(tmp) >= 2:
+                    # always adding the corners AND the avg points for each line
+                    self.corners = tmp
+                    for p in avg_points:
+                        self.corners.append(p)
+                self.line_pub.publish([p1, p2])
+
+        self.clear_pub.publish("test")
+        self.line_pub.publish([])
+
+    def scan_callback(self, scan):
+        """
+        Is called whenever a new laser scan arrives.
+        Computes the 2D hough transform of the laser scan and initiates the container detection.
+
+        :param scan: laser scan to detect container in
+        """
+        # rospy.loginfo("receiving laser scan..")
+        # rospy.loginfo("seq: %s", scan.header.seq)
+
+        theta_values = np.deg2rad(np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
+        r_values = np.arange(config.RADIUS_MIN, config.RADIUS_MAX, config.DELTA_RADIUS, dtype=np.double)
+        # precompute sines and cosines
+        cosines = np.cos(theta_values)
+        sines = np.sin(theta_values)
+        # define discrete hough space
+        hough_space = np.zeros([len(r_values), len(theta_values)], dtype=int)
+
+        # init dictionary for corresponding points
+        points = {}
+        for r in range(len(r_values)):
+            for theta in range(len(theta_values)):
+                points[(r, theta)] = []
+
+        # compute hough space
+        for p_idx, (x, y) in enumerate(get_points_from_scan(scan)):
+            if not np.isnan(x) and not np.isnan(y):
+                for theta_idx, (cos_theta, sin_theta) in enumerate(zip(cosines, sines)):
+                    r = x * cos_theta + y * sin_theta
+                    if r < config.RADIUS_MIN or r > config.RADIUS_MAX:
+                        continue
+                    r_idx = int((r - config.RADIUS_MIN) / config.DELTA_RADIUS)
+                    hough_space[r_idx][theta_idx] += 1
+                    p = Point()
+                    p.x = x
+                    p.y = y
+                    points[(r_idx, theta_idx)].append(p)
+
+        self.detect_container(hough_space, points)
+
+    def publish_detected_container(self, found_line_params):
+        """
+        Publishes the detected corners of the container and returns them.
+
+        :param found_line_params: parameters of detected lines
+        :return: detected corners of the container
+        """
+        # rospy.loginfo("parameters of detected lines: %s", found_line_params)
+        container_corners = retrieve_container_corners(found_line_params)
+        self.corner_pub.publish(container_corners)
+        return container_corners
+
+    def odom_callback(self, odom):
+        """
+        Is called whenever new odometry data arrives.
+
+        :param odom: odometry data to update robot pos with
+        """
+        self.robot_pos = odom.twist.twist.linear
 
 
 def get_theta_by_index(idx):
@@ -107,12 +255,13 @@ def retrieve_best_line(hough_space):
     return c, r
 
 
-def append_line_points(theta, radius):
+def compute_line_points(theta, radius):
     """
-    Appends two points representing a detected line to the lines marker.
+    Computes two points representing a detected line.
 
     :param theta: theta value of detected line
     :param radius: radius value of detected line
+    :return: two points representing the detected line
     """
     p1 = Point()
     p2 = Point()
@@ -169,7 +318,8 @@ def reasonable_dist_to_already_detected_lines(point_list, avg_points):
     avg.x = np.average([p.x for p in point_list])
     avg.y = np.average([p.y for p in point_list])
     for p in avg_points:
-        if dist(avg, p) > config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON or dist(avg, p) < config.CONTAINER_WIDTH / 2:
+        eps_length = config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON
+        if dist(avg, p) > eps_length or dist(avg, p) < config.CONTAINER_WIDTH / 2:
             return False
     return True
 
@@ -369,20 +519,13 @@ def retrieve_container_corners(found_line_params):
     return container_corners
 
 
-def publish_detected_container(found_line_params):
-    """
-    Publishes the detected corners of the container as well as its entry point.
-
-    :param found_line_params: parameters of detected lines
-    """
-    global CORNER_PUB
-    # rospy.loginfo("parameters of detected lines: %s", found_line_params)
-    container_corners = retrieve_container_corners(found_line_params)
-    CORNER_PUB.publish(container_corners)
-    return container_corners
-
-
 def determine_thresh_based_on_dist_to_robot(dist_to_robot):
+    """
+    Determines a dynamic threshold for the accumulator array based on the robot's distance to the considered shape.
+
+    :param dist_to_robot: distance of the shape (line candidate) to the robot
+    :return: accumulator threshold
+    """
     # TODO: to be refined based on experiments
     if dist_to_robot < 3:
         return 50
@@ -392,93 +535,6 @@ def determine_thresh_based_on_dist_to_robot(dist_to_robot):
         return 10
     else:
         return 5
-
-
-def detect_container(hough_space, corresponding_points):
-    """
-    Detects the container based on lines in the specified hough space.
-
-    :param hough_space: result of the hough transform of the point cloud
-    :param corresponding_points: dictionary containing a list of points corresponding to each (rad, theta) combination
-    :return: line marker representing the container sides
-    """
-    global CORNERS, DBG_PUB
-
-    c, r = retrieve_best_line(hough_space)
-    point_list = median_filter(np.array(corresponding_points[(c, r)]))
-    dist_to_robot = dist(ROBOT_POS, point_list[0]) if len(point_list) > 0 else 10
-    dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
-
-    base_lines_tested = 0
-    base_attempts = 0
-    tested_base_lines = []
-
-    while hough_space.max() > dynamic_acc_thresh_based_on_dist and base_lines_tested < 10 and base_attempts < 50:
-        DBG_PUB.publish([])
-        LINE_PUB.publish([])
-        # rospy.loginfo("testing new base line with %s points", hough_space.max())
-        # base line parameters
-        c, r = retrieve_best_line(hough_space)
-        point_list = median_filter(np.array(corresponding_points[(c, r)]))
-
-        dist_to_robot = dist(ROBOT_POS, point_list[0]) if len(point_list) > 0 else 10
-        dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
-        rospy.loginfo("DIST TO ROBOT: %s, THRESH: %s", dist_to_robot, dynamic_acc_thresh_based_on_dist)
-
-        theta_base = get_theta_by_index(r)
-        radius = get_radius_by_index(c)
-        already_tested = already_tested_base_line(tested_base_lines, radius, theta_base)
-        reasonable_line = detected_reasonable_line(point_list, None, theta_base, [])
-
-        if already_tested or len(point_list) <= dynamic_acc_thresh_based_on_dist or not reasonable_line:
-            hough_space[c][r] = 0
-            base_attempts += 1
-            # rospy.loginfo("base attempt: %s", base_attempts)
-            continue
-
-        # visualize base line
-        DBG_PUB.publish(point_list)
-
-        p1, p2 = append_line_points(theta_base, radius)
-        lines = [p1, p2]
-        LINE_PUB.publish(lines)
-
-        found_line_params = [(radius, theta_base)]
-        avg_points = []
-        update_avg_points(avg_points, point_list)
-        hough_space[c][r] = 0
-        hough_copy = hough_space.copy()
-        base_lines_tested += 1
-        tested_base_lines.append((radius, theta_base))
-
-        # detect remaining 2-3 sides
-        while len(found_line_params) < 4 and hough_copy.max() > dynamic_acc_thresh_based_on_dist:
-            c, r = retrieve_best_line(hough_copy)
-            radius = get_radius_by_index(c)
-            point_list = median_filter(np.array(corresponding_points[(c, r)]))
-            theta = get_theta_by_index(r)
-
-            if line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius,
-                                             dynamic_acc_thresh_based_on_dist):
-                DBG_PUB.publish(point_list)
-                p1, p2 = append_line_points(theta, radius)
-                lines = [p1, p2]
-                found_line_params.append((radius, theta))
-                update_avg_points(avg_points, point_list)
-            hough_copy[c][r] = 0
-
-        if len(found_line_params) >= 3:
-            tmp = publish_detected_container(found_line_params)
-            if len(tmp) >= 2:
-                # always contains the corners AND the avg points for each line -> 2x number of detected corners points
-                CORNERS = tmp
-                for p in avg_points:
-                    CORNERS.append(p)
-            LINE_PUB.publish(lines)
-
-    CLEAR_PUB.publish("test")
-    LINE_PUB.publish([])
-    # rospy.loginfo("NOTHING DETECTED!")
 
 
 def get_points_from_scan(scan):
@@ -499,64 +555,17 @@ def get_points_from_scan(scan):
     return points
 
 
-def scan_callback(scan):
-    """
-    Is called whenever a new laser scan arrives.
-    Computes the 2D hough transform of the laser scan and initiates the container detection.
-
-    :param scan: laser scan to detect container in
-    """
-    # rospy.loginfo("receiving laser scan..")
-    # rospy.loginfo("seq: %s", scan.header.seq)
-
-    theta_values = np.deg2rad(np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
-    r_values = np.arange(config.RADIUS_MIN, config.RADIUS_MAX, config.DELTA_RADIUS, dtype=np.double)
-    # precompute sines and cosines
-    cosines = np.cos(theta_values)
-    sines = np.sin(theta_values)
-    # define discrete hough space
-    hough_space = np.zeros([len(r_values), len(theta_values)], dtype=int)
-
-    # init dictionary for corresponding points
-    corresponding_points = {}
-    for r in range(len(r_values)):
-        for theta in range(len(theta_values)):
-            corresponding_points[(r, theta)] = []
-
-    # compute hough space
-    for p_idx, (x, y) in enumerate(get_points_from_scan(scan)):
-        if not np.isnan(x) and not np.isnan(y):
-            for theta_idx, (cos_theta, sin_theta) in enumerate(zip(cosines, sines)):
-                r = x * cos_theta + y * sin_theta
-                if r < config.RADIUS_MIN or r > config.RADIUS_MAX:
-                    continue
-                r_idx = int((r - config.RADIUS_MIN) / config.DELTA_RADIUS)
-                hough_space[r_idx][theta_idx] += 1
-                p = Point()
-                p.x = x
-                p.y = y
-                corresponding_points[(r_idx, theta_idx)].append(p)
-
-    detect_container(hough_space, corresponding_points)
-    # rospy.loginfo(scan.header)
-
-
-def odom_callback(odom):
-    global ROBOT_POS
-    ROBOT_POS = odom.twist.twist.linear
-
-
 def node():
     """
-    Node to detect the container entry in a point cloud.
+    Node to detect the container entry in a laser scan.
     """
     rospy.init_node("detect_container_entry")
-    server = DetectServer()
+    server = DetectionServer()
     rospy.spin()
 
 
 if __name__ == '__main__':
     try:
         node()
-    except rospy.ROSInterruptException:
+    except rospy.ROSInterruptExceptionexecute:
         pass
