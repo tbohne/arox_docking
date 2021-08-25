@@ -152,11 +152,11 @@ def clear_markers(header):
 
     :param header: point cloud header
     """
+    global DBG_POINTS, HOUGH_LINE_PUB
     publish_corners([], header)
-    # publish_outdoor_marker(None, header)
-    # publish_container_entry_arrow(None, header, None)
-    # publish_container_center_marker(None, header)
-    # publish_container_entry_arrow(None, None, None)
+    DBG_POINTS = []
+    publish_dgb_points(header)
+    HOUGH_LINE_PUB.publish(generate_default_line_marker(header))
 
 
 def get_theta_by_index(idx):
@@ -584,6 +584,7 @@ def detect_container(hough_space, header, corresponding_points):
                 CORNERS = tmp
                 for p in avg_points:
                     CORNERS.append(p)
+            clear_markers(header)
             return lines
 
     clear_markers(header)

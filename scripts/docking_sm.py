@@ -276,6 +276,8 @@ class AlignRobotToRamp(smach.State):
             rospy.loginfo("after wait: %s", move_base_client.get_result())
             rospy.loginfo("sleeping for 5s...")
             rospy.sleep(5)
+            # clear arrow maker
+            publish_container_entry_arrow(None, None)
             return 'succeeded'
         return 'aborted'
 
@@ -347,7 +349,9 @@ class DriveIntoContainer(smach.State):
                 outdoor = determine_point_in_front_of_container(container_corners)
 
                 publish_center_marker(center)
-                publish_outdoor_marker(outdoor)
+                # TODO: move outdoor marker handling to correct pos when implemented
+                # publish_outdoor_marker(outdoor)
+                # publish_outdoor_marker(None, header)
 
                 angle = math.atan2(outdoor.y - center.y, outdoor.x - center.x)
                 center_res = self.compute_center(center, angle)
@@ -356,6 +360,8 @@ class DriveIntoContainer(smach.State):
                     rospy.loginfo("detected center: %s", center_res)
                     if self.drive_in(center_res):
                         userdata.drive_into_container_output = get_success_msg()
+                        # clear marker
+                        publish_center_marker(None)
                         return 'succeeded'
                     userdata.drive_into_container_output = get_failure_msg()
                     return 'aborted'
