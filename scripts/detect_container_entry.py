@@ -5,9 +5,10 @@ import actionlib
 import numpy as np
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
-from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from arox_docking.msg import DetectAction, DetectResult
+from std_msgs.msg import String
+from arox_docking.msg import PointArray
 
 from arox_docking.util import dist
 
@@ -15,12 +16,13 @@ CONTAINER_WIDTH = 2.83
 CONTAINER_LENGTH = 3.7
 EPSILON = 0.2
 
-HOUGH_LINE_PUB = None
-CORNER_MARKER_PUB = None
-DBG_PUB = None
 SCAN_SUB = None
 POSE_SUB = None
 CORNERS = None
+LINE_PUB = None
+CORNER_PUB = None
+DBG_PUB = None
+CLEAR_PUB = None
 
 DBG_POINTS = []
 ROBOT_POS = None
@@ -44,17 +46,18 @@ class DetectServer:
 
     def execute(self, goal):
         # do stuff
-        global SCAN_SUB, POSE_SUB, HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, CORNERS
+        global SCAN_SUB, POSE_SUB, CORNERS, LINE_PUB, CORNER_PUB, DBG_PUB, CLEAR_PUB
 
         CORNERS = None
-
-        HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
-        CORNER_MARKER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
-        DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
         # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
         SCAN_SUB = rospy.Subscriber("/scanVelodyne", LaserScan, scan_callback, queue_size=1, buff_size=2 ** 32)
         # subscribe to robot pose (ground truth)
         POSE_SUB = rospy.Subscriber("/pose_ground_truth", Odometry, odom_callback, queue_size=1)
+
+        LINE_PUB = rospy.Publisher("/publish_lines", PointArray, queue_size=1)
+        CORNER_PUB = rospy.Publisher("/publish_corners", PointArray, queue_size=1)
+        DBG_PUB = rospy.Publisher("/publish_dbg", PointArray, queue_size=1)
+        CLEAR_PUB = rospy.Publisher("/clear_markers", String, queue_size=1)
 
         attempts = 10
         cnt = 0
@@ -76,78 +79,6 @@ class DetectServer:
             SCAN_SUB.unregister()
             POSE_SUB.unregister()
             self.server.set_preempted()
-
-
-def generate_default_line_marker(header):
-    """
-    Initializes the marker for detected lines.
-
-    :param header: point cloud header
-    :return: initialized line marker
-    """
-    lines = Marker()
-    lines.header = header
-    lines.ns = "hough"
-    lines.id = 0
-    lines.action = lines.ADD
-    lines.type = lines.LINE_LIST
-    lines.pose.orientation.w = 1.0
-    lines.scale.x = 0.01
-    lines.color.g = 1.0
-    lines.color.a = 1.0
-    return lines
-
-
-def publish_dgb_points(header):
-    """
-    Publishes the debugging points marker stored in DBG_POINTS.
-
-    :param header: point cloud header
-    """
-    global DBG_PUB, DBG_POINTS
-    marker = Marker()
-    marker.header = header
-    marker.id = 1
-    marker.type = marker.POINTS
-    marker.action = marker.ADD
-    marker.pose.orientation.w = 1
-    marker.points = DBG_POINTS
-    marker.scale.x = marker.scale.y = marker.scale.z = 0.08
-    marker.color.a = marker.color.b = marker.color.g = 1.0
-    DBG_PUB.publish(marker)
-
-
-def publish_corners(intersections, header):
-    """
-    Publishes the detected container corners as marker points.
-
-    :param intersections: container corners (where the sides intersect)
-    :param header: point cloud header
-    """
-    global CORNER_MARKER_PUB
-    marker = Marker()
-    marker.header = header
-    marker.id = 1
-    marker.type = marker.POINTS
-    marker.action = marker.ADD
-    marker.pose.orientation.w = 1
-    marker.points = intersections
-    marker.scale.x = marker.scale.y = marker.scale.z = 0.4
-    marker.color.a = marker.color.b = 1.0
-    CORNER_MARKER_PUB.publish(marker)
-
-
-def clear_markers(header):
-    """
-    Resets the outdated markers.
-
-    :param header: point cloud header
-    """
-    global DBG_POINTS, HOUGH_LINE_PUB
-    publish_corners([], header)
-    DBG_POINTS = []
-    publish_dgb_points(header)
-    HOUGH_LINE_PUB.publish(generate_default_line_marker(header))
 
 
 def get_theta_by_index(idx):
@@ -195,13 +126,12 @@ def retrieve_best_line(hough_space):
     return c, r
 
 
-def append_line_points(theta, radius, lines):
+def append_line_points(theta, radius):
     """
     Appends two points representing a detected line to the lines marker.
 
     :param theta: theta value of detected line
     :param radius: radius value of detected line
-    :param lines: lines marker
     """
     p1 = Point()
     p2 = Point()
@@ -214,8 +144,7 @@ def append_line_points(theta, radius, lines):
     else:
         p1.y = compute_y_coordinate(theta, radius, p1.x)
         p2.y = compute_y_coordinate(theta, radius, p2.x)
-    lines.points.append(p1)
-    lines.points.append(p2)
+    return p1, p2
 
 
 def median_filter(points_on_line):
@@ -363,19 +292,6 @@ def already_tested_base_line(tested_base_lines, radius, theta):
     return False
 
 
-def append_and_publish_dbg_points(point_list, header):
-    """
-    Appends the specified points to the list of debug points to be visualized as markers
-    and publishes the list.
-
-    :param point_list: list of points to be added to the dbg points
-    :param header: point cloud header
-    """
-    global DBG_POINTS
-    DBG_POINTS.extend(point_list)
-    publish_dgb_points(header)
-
-
 def container_front_or_back_detected(length):
     """
     Returns whether the specified length corresponds to the container front / back.
@@ -480,10 +396,10 @@ def publish_detected_container(found_line_params, header, avg_points):
     :param header: point cloud header
     :param avg_points: average points representing detected lines
     """
-    global ENTRY_PUB
+    global CORNER_PUB
     # rospy.loginfo("parameters of detected lines: %s", found_line_params)
     container_corners = retrieve_container_corners(found_line_params)
-    publish_corners(container_corners, header)
+    CORNER_PUB.publish(container_corners)
     return container_corners
 
 
@@ -508,7 +424,7 @@ def detect_container(hough_space, header, corresponding_points):
     :param corresponding_points: dictionary containing a list of points corresponding to each (rad, theta) combination
     :return: line marker representing the container sides
     """
-    global DBG_POINTS, CORNERS
+    global DBG_POINTS, CORNERS, DBG_PUB
 
     c, r = retrieve_best_line(hough_space)
     point_list = median_filter(np.array(corresponding_points[(c, r)]))
@@ -520,8 +436,8 @@ def detect_container(hough_space, header, corresponding_points):
     tested_base_lines = []
 
     while hough_space.max() > dynamic_acc_thresh_based_on_dist and base_lines_tested < 10 and base_attempts < 50:
-        DBG_POINTS = []
-        lines = generate_default_line_marker(header)
+        DBG_PUB.publish([])
+        LINE_PUB.publish([])
         # rospy.loginfo("testing new base line with %s points", hough_space.max())
         # base line parameters
         c, r = retrieve_best_line(hough_space)
@@ -543,9 +459,12 @@ def detect_container(hough_space, header, corresponding_points):
             continue
 
         # visualize base line
-        append_and_publish_dbg_points(point_list, header)
+        DBG_PUB.publish(point_list)
 
-        append_line_points(theta_base, radius, lines)
+        p1, p2 = append_line_points(theta_base, radius)
+        lines = [p1, p2]
+        LINE_PUB.publish(lines)
+
         found_line_params = [(radius, theta_base)]
         avg_points = []
         update_avg_points(avg_points, point_list)
@@ -563,8 +482,9 @@ def detect_container(hough_space, header, corresponding_points):
 
             if line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius,
                                              dynamic_acc_thresh_based_on_dist):
-                append_and_publish_dbg_points(point_list, header)
-                append_line_points(theta, radius, lines)
+                DBG_PUB.publish(point_list)
+                p1, p2 = append_line_points(theta, radius)
+                lines = [p1, p2]
                 found_line_params.append((radius, theta))
                 update_avg_points(avg_points, point_list)
             hough_copy[c][r] = 0
@@ -576,12 +496,11 @@ def detect_container(hough_space, header, corresponding_points):
                 CORNERS = tmp
                 for p in avg_points:
                     CORNERS.append(p)
-            clear_markers(header)
-            return lines
+            LINE_PUB.publish(lines)
 
-    clear_markers(header)
+    CLEAR_PUB.publish("test")
+    LINE_PUB.publish([])
     # rospy.loginfo("NOTHING DETECTED!")
-    return generate_default_line_marker(header)
 
 
 def get_points_from_scan(scan):
@@ -642,9 +561,8 @@ def scan_callback(scan):
                 p.y = y
                 corresponding_points[(r_idx, theta_idx)].append(p)
 
-    lines = detect_container(hough_space, scan.header, corresponding_points)
+    detect_container(hough_space, scan.header, corresponding_points)
     # rospy.loginfo(scan.header)
-    HOUGH_LINE_PUB.publish(lines)
 
 
 def odom_callback(odom):
