@@ -50,11 +50,11 @@ catkin_python_setup()
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+add_message_files(
+  FILES
+  PointArray.msg
+#  Message2.msg
+)
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -170,6 +170,7 @@ catkin_install_python(
     scripts/docking_sm.py
     scripts/undocking_sm.py
     scripts/start_smach.py
+    scripts/visualizer.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
