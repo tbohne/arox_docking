@@ -1,20 +1,15 @@
 #!/usr/bin/env python
-import rospy
-import math
 import actionlib
 import numpy as np
-from sensor_msgs.msg import LaserScan
-from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Point, PoseStamped, Quaternion
+import rospy
+from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON
 from arox_docking.msg import DetectAction, DetectResult
-from std_msgs.msg import String
 from arox_docking.msg import PointArray
-
 from arox_docking.util import dist
-
-CONTAINER_WIDTH = 2.83
-CONTAINER_LENGTH = 3.7
-EPSILON = 0.2
+from geometry_msgs.msg import Point
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import String
 
 SCAN_SUB = None
 POSE_SUB = None
@@ -23,8 +18,6 @@ LINE_PUB = None
 CORNER_PUB = None
 DBG_PUB = None
 CLEAR_PUB = None
-
-DBG_POINTS = []
 ROBOT_POS = None
 
 DELTA_THETA = 2
@@ -383,18 +376,16 @@ def retrieve_container_corners(found_line_params):
             if p != j:
                 d = dist(p, j)
                 if container_front_or_back_detected(d):
-                    if not p in container_corners:
+                    if p not in container_corners:
                         container_corners.append(p)
     return container_corners
 
 
-def publish_detected_container(found_line_params, header, avg_points):
+def publish_detected_container(found_line_params):
     """
     Publishes the detected corners of the container as well as its entry point.
 
     :param found_line_params: parameters of detected lines
-    :param header: point cloud header
-    :param avg_points: average points representing detected lines
     """
     global CORNER_PUB
     # rospy.loginfo("parameters of detected lines: %s", found_line_params)
@@ -415,16 +406,15 @@ def determine_thresh_based_on_dist_to_robot(dist_to_robot):
         return 5
 
 
-def detect_container(hough_space, header, corresponding_points):
+def detect_container(hough_space, corresponding_points):
     """
     Detects the container based on lines in the specified hough space.
 
     :param hough_space: result of the hough transform of the point cloud
-    :param header: point cloud header
     :param corresponding_points: dictionary containing a list of points corresponding to each (rad, theta) combination
     :return: line marker representing the container sides
     """
-    global DBG_POINTS, CORNERS, DBG_PUB
+    global CORNERS, DBG_PUB
 
     c, r = retrieve_best_line(hough_space)
     point_list = median_filter(np.array(corresponding_points[(c, r)]))
@@ -490,7 +480,7 @@ def detect_container(hough_space, header, corresponding_points):
             hough_copy[c][r] = 0
 
         if len(found_line_params) >= 3:
-            tmp = publish_detected_container(found_line_params, header, avg_points)
+            tmp = publish_detected_container(found_line_params)
             if len(tmp) >= 2:
                 # always contains the corners AND the avg points for each line -> 2x number of detected corners points
                 CORNERS = tmp
@@ -528,8 +518,6 @@ def scan_callback(scan):
 
     :param scan: laser scan to detect container in
     """
-    global HOUGH_LINE_PUB
-
     # rospy.loginfo("receiving laser scan..")
     # rospy.loginfo("seq: %s", scan.header.seq)
 
@@ -561,7 +549,7 @@ def scan_callback(scan):
                 p.y = y
                 corresponding_points[(r_idx, theta_idx)].append(p)
 
-    detect_container(hough_space, scan.header, corresponding_points)
+    detect_container(hough_space, corresponding_points)
     # rospy.loginfo(scan.header)
 
 

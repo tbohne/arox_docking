@@ -1,28 +1,21 @@
 #!/usr/bin/env python
 
+import math
+
+import actionlib
+import numpy as np
 import rospy
 import smach
 import smach_ros
-import actionlib
-
-import tf2_ros
 import tf2_geometry_msgs
-
-from visualization_msgs.msg import Marker
-from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal, MoveBaseActionGoal
-from geometry_msgs.msg import PoseStamped
+import tf2_ros
+from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON
 from arox_docking.msg import DockAction, DetectAction, DetectGoal
-from geometry_msgs.msg import Point, PoseStamped, Quaternion
-from tf.transformations import euler_from_quaternion, quaternion_from_euler
-
 from arox_docking.util import dist
-
-import numpy as np
-import math
-
-CONTAINER_WIDTH = 2.83
-CONTAINER_LENGTH = 3.7
-EPSILON = 0.2
+from geometry_msgs.msg import Point, PoseStamped, Quaternion
+from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
+from tf.transformations import quaternion_from_euler
+from visualization_msgs.msg import Marker
 
 
 def determine_point_in_front_of_container(corners):
