@@ -49,15 +49,11 @@ class DetectionServer:
         self.dbg_pub = rospy.Publisher("/publish_dbg", PointArray, queue_size=1)
         self.clear_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
-        # TODO: several attempts useful here?
-        attempts = 10
-        cnt = 0
         result = DetectResult()
+        # give it some time to detect the container, e.g. 5s
+        rospy.sleep(5)
 
-        while self.corners is None and cnt < attempts:
-            cnt += 1
-            rospy.sleep(10)
-        if cnt < attempts:
+        if self.corners:
             rospy.loginfo("CORNER DETECTION SUCCEEDED!!")
             self.scan_sub.unregister()
             self.pose_sub.unregister()
@@ -86,9 +82,10 @@ class DetectionServer:
         base_attempts = 0
         tested_base_lines = []
 
+        self.dbg_pub.publish([])
+        self.line_pub.publish([])
+
         while hough_space.max() > dynamic_acc_thresh_based_on_dist and base_lines_tested < 10 and base_attempts < 50:
-            self.dbg_pub.publish([])
-            self.line_pub.publish([])
             # rospy.loginfo("testing new base line with %s points", hough_space.max())
             # base line parameters
             c, r = retrieve_best_line(hough_space)
@@ -146,9 +143,6 @@ class DetectionServer:
                         self.corners.append(p)
                 self.line_pub.publish([p1, p2])
 
-        self.clear_pub.publish("test")
-        self.line_pub.publish([])
-
     def scan_callback(self, scan):
         """
         Is called whenever a new laser scan arrives.
@@ -159,35 +153,37 @@ class DetectionServer:
         # rospy.loginfo("receiving laser scan..")
         # rospy.loginfo("seq: %s", scan.header.seq)
 
-        theta_values = np.deg2rad(np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
-        r_values = np.arange(config.RADIUS_MIN, config.RADIUS_MAX, config.DELTA_RADIUS, dtype=np.double)
-        # precompute sines and cosines
-        cosines = np.cos(theta_values)
-        sines = np.sin(theta_values)
-        # define discrete hough space
-        hough_space = np.zeros([len(r_values), len(theta_values)], dtype=int)
+        # only detecting container if it's not already detected
+        if self.corners is None:
+            theta_values = np.deg2rad(np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
+            r_values = np.arange(config.RADIUS_MIN, config.RADIUS_MAX, config.DELTA_RADIUS, dtype=np.double)
+            # precompute sines and cosines
+            cosines = np.cos(theta_values)
+            sines = np.sin(theta_values)
+            # define discrete hough space
+            hough_space = np.zeros([len(r_values), len(theta_values)], dtype=int)
 
-        # init dictionary for corresponding points
-        points = {}
-        for r in range(len(r_values)):
-            for theta in range(len(theta_values)):
-                points[(r, theta)] = []
+            # init dictionary for corresponding points
+            points = {}
+            for r in range(len(r_values)):
+                for theta in range(len(theta_values)):
+                    points[(r, theta)] = []
 
-        # compute hough space
-        for p_idx, (x, y) in enumerate(get_points_from_scan(scan)):
-            if not np.isnan(x) and not np.isnan(y):
-                for theta_idx, (cos_theta, sin_theta) in enumerate(zip(cosines, sines)):
-                    r = x * cos_theta + y * sin_theta
-                    if r < config.RADIUS_MIN or r > config.RADIUS_MAX:
-                        continue
-                    r_idx = int((r - config.RADIUS_MIN) / config.DELTA_RADIUS)
-                    hough_space[r_idx][theta_idx] += 1
-                    p = Point()
-                    p.x = x
-                    p.y = y
-                    points[(r_idx, theta_idx)].append(p)
+            # compute hough space
+            for p_idx, (x, y) in enumerate(get_points_from_scan(scan)):
+                if not np.isnan(x) and not np.isnan(y):
+                    for theta_idx, (cos_theta, sin_theta) in enumerate(zip(cosines, sines)):
+                        r = x * cos_theta + y * sin_theta
+                        if r < config.RADIUS_MIN or r > config.RADIUS_MAX:
+                            continue
+                        r_idx = int((r - config.RADIUS_MIN) / config.DELTA_RADIUS)
+                        hough_space[r_idx][theta_idx] += 1
+                        p = Point()
+                        p.x = x
+                        p.y = y
+                        points[(r_idx, theta_idx)].append(p)
 
-        self.detect_container(hough_space, points)
+            self.detect_container(hough_space, points)
 
     def publish_detected_container(self, found_line_params):
         """
