@@ -14,51 +14,100 @@ from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
 from tf.transformations import quaternion_from_euler
 
-TF_BUFFER = None
 FAILURE = 50
-CENTER_DETECTION_ATTEMPTS = 30
-CENTER_PUB = None
-OUTDOOR_PUB = None
-ENTRY_PUB = None
+TF_BUFFER = None
 
 
 def get_failure_msg():
+    """
+    Generates a failure message.
+
+    :return: failure message
+    """
     msg = DockAction
     msg.result_state = "failure"
     return msg
 
 
 def get_success_msg():
+    """
+    Generates a success message.
+
+    :return: success message
+    """
     msg = DockAction
     msg.result_state = "success"
     return msg
 
 
-# initial state
 class ContainerProximity(smach.State):
+    """
+    Initial state - the robot is assumed to be located near the container.
+    """
+
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'])
 
     @staticmethod
     def execute(userdata):
+        """
+        Executes the 'CONTAINER PROXIMITY' state.
+
+        :param userdata: input for the state
+        :return: atm just success
+        """
         rospy.loginfo('executing state CONTAINER_PROXIMITY')
         # TODO: add gps check - correct area?
         return 'succeeded'
 
 
 class DetectContainer(smach.State):
+    """
+    Container detection state - tries to detect the container in the laser scan.
+    """
+
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['detect_container_input'],
                              output_keys=['detect_container_output'])
 
-    def determine_container_entry(self, points):
+        self.entry_pub = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
+
+    def execute(self, userdata):
+        """
+        Executes the 'DETECT CONTAINER' state.
+
+        :param userdata: input for the state
+        :return: outcome of the execution (success / failure)
+        """
+        rospy.loginfo('executing state DETECT_CONTAINER')
+        client = actionlib.SimpleActionClient('detect_container', DetectAction)
+        client.wait_for_server()
+        goal = DetectGoal()
+        client.send_goal(goal)
+        client.wait_for_result()
+        res = client.get_result().corners
+        if res:
+            base_point, container_entry = self.determine_container_entry(res)
+            angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
+            pose = PoseStamped()
+            pose.pose.position = container_entry
+            q = quaternion_from_euler(0, 0, angle)
+            pose.pose.orientation = Quaternion(*q)
+            self.entry_pub.publish(pose)
+            userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
+            return 'succeeded'
+        return 'aborted'
+
+    @staticmethod
+    def determine_container_entry(points):
         """
         Determines the container entry based on the detected corners and the average line points.
 
         :param points: detected container corners + avg points for each line
         :return: base point, container entry
         """
+        # TODO: check whether that's correct
         corners = points[:int(len(points) / 2)]
         avg_points = points[int(len(points) / 2):]
 
@@ -85,58 +134,44 @@ class DetectContainer(smach.State):
             return base_point, entry_candidate_one
         return base_point, entry_candidate_two
 
-    def get_container_entry_with_orientation(self, container_entry, angle):
+    @staticmethod
+    def get_container_entry_with_orientation(container_entry, angle):
         """
-        Publishes the position in front of the container entry where the robot should move to (as pose stamped).
+        Generates the pose in front of the container entry where the robot should move to (as pose stamped).
 
         :param container_entry: position in front of the container entry
-        :param angle: orientation in front of the container
+        :param angle: goal orientation for the robot
         """
-        goal = PoseStamped()
-        goal.header.frame_id = "base_link"
-        goal.header.stamp = rospy.Time.now()
-        goal.pose.position.x = container_entry.x
-        goal.pose.position.y = container_entry.y
-        goal.pose.position.z = 0.0
+        entry_pose = PoseStamped()
+        entry_pose.header.frame_id = "base_link"
+        entry_pose.header.stamp = rospy.Time.now()
+        entry_pose.pose.position.x = container_entry.x
+        entry_pose.pose.position.y = container_entry.y
+        entry_pose.pose.position.z = 0.0
         q = quaternion_from_euler(0, 0, angle)
-        goal.pose.orientation = Quaternion(*q)
-        return goal
-
-    def execute(self, userdata):
-        global ENTRY_PUB
-        rospy.loginfo('executing state DETECT_CONTAINER')
-
-        client = actionlib.SimpleActionClient('detect_container', DetectAction)
-        client.wait_for_server()
-        goal = DetectGoal()
-        client.send_goal(goal)
-        client.wait_for_result()
-        res = client.get_result().corners
-        rospy.loginfo("RESULT: %s", res)
-        if res:
-            rospy.loginfo("detected entry: %s", res)
-            base_point, container_entry = self.determine_container_entry(res)
-            angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
-
-            pose = PoseStamped()
-            pose.pose.position = container_entry
-            q = quaternion_from_euler(0, 0, angle)
-            pose.pose.orientation = Quaternion(*q)
-            ENTRY_PUB.publish(pose)
-
-            userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
-            return 'succeeded'
-        return 'aborted'
+        entry_pose.pose.orientation = Quaternion(*q)
+        return entry_pose
 
 
 class AlignRobotToRamp(smach.State):
+    """
+    Robot alignment state - aligns the robot to the ramp of the container.
+    """
+
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['align_robot_to_ramp_input'],
                              output_keys=['align_robot_to_ramp_output'])
 
+        self.entry_pub = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
+
     def execute(self, userdata):
-        global ENTRY_PUB
+        """
+        Executes the 'ALIGN ROBOT TO RAMP' state.
+
+        :param userdata: input for the state
+        :return: outcome of the execution (success / failure)
+        """
         rospy.loginfo('executing state ALIGN_ROBOT_TO_RAMP')
 
         if userdata.align_robot_to_ramp_input:
@@ -160,18 +195,75 @@ class AlignRobotToRamp(smach.State):
             rospy.loginfo("sleeping for 5s...")
             rospy.sleep(5)
             # clear arrow maker
-            ENTRY_PUB.publish(PoseStamped())
+            self.entry_pub.publish(PoseStamped())
             return 'succeeded'
         return 'aborted'
 
 
 class DriveIntoContainer(smach.State):
+    """
+    State that drives the robot into the container.
+    """
+
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['drive_into_container_input'],
                              output_keys=['drive_into_container_output'])
 
-    def drive_in(self, center_pos):
+        self.center_pub = rospy.Publisher("/publish_center", Point, queue_size=1)
+
+    def execute(self, userdata):
+        """
+        Executes the 'DRIVE INTO CONTAINER' state.
+
+        :param userdata: input for the state
+        :return: outcome of the execution (success / failure)
+        """
+        rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
+
+        # TODO: remove hard coded value
+        attempts = 5
+        cnt = 0
+        while cnt < attempts:
+            cnt += 1
+            client = actionlib.SimpleActionClient('detect_container', DetectAction)
+            client.wait_for_server()
+            goal = DetectGoal()
+            client.send_goal(goal)
+            client.wait_for_result()
+            res = client.get_result().corners
+
+            # 4 corners + 4 avg points
+            if res and len(res) == 8:
+                rospy.loginfo("CONTAINER DETECTED!")
+                container_corners = res[:4]
+                center = Point()
+                center.x = np.average([p.x for p in container_corners])
+                center.y = np.average([p.y for p in container_corners])
+                outdoor = self.determine_point_in_front_of_container(container_corners)
+                self.center_pub.publish(center)
+                angle = math.atan2(outdoor.y - center.y, outdoor.x - center.x)
+                center_res = self.compute_center(center, angle)
+
+                if center_res:
+                    if self.drive_in(center_res):
+                        userdata.drive_into_container_output = get_success_msg()
+                        # clear marker
+                        self.center_pub.publish(PoseStamped())
+                        return 'succeeded'
+                    userdata.drive_into_container_output = get_failure_msg()
+                    return 'aborted'
+        userdata.drive_into_container_output = get_failure_msg()
+        return 'aborted'
+
+    @staticmethod
+    def drive_in(center_pos):
+        """
+        Drives the robot to the specified center position inside the container.
+
+        :param center_pos: goal position at the center of the container
+        :return: true if successful, false otherwise
+        """
         pose_stamped = transform_pose(TF_BUFFER, center_pos, 'map')
         move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
         move_base_client.wait_for_server()
@@ -192,7 +284,15 @@ class DriveIntoContainer(smach.State):
             return False
         return True
 
-    def compute_center(self, center_point, angle):
+    @staticmethod
+    def compute_center(center_point, angle):
+        """
+        Computes the center pose (position + orientation).
+
+        :param center_point: position
+        :param angle: orientation
+        :return: pose
+        """
         center = PoseStamped()
         center.header.frame_id = "base_link"
         center.header.stamp = rospy.Time.now()
@@ -203,7 +303,14 @@ class DriveIntoContainer(smach.State):
         center.pose.orientation = Quaternion(*q)
         return center
 
-    def determine_point_in_front_of_container(self, corners):
+    @staticmethod
+    def determine_point_in_front_of_container(corners):
+        """
+        Computes a point in front of the container.
+
+        :param corners: detected corner points of the container
+        :return: outdoor point
+        """
         base_point = Point()
         for i in range(len(corners)):
             for j in range(len(corners)):
@@ -217,63 +324,11 @@ class DriveIntoContainer(smach.State):
 
         length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
         res_vec = (direction_vector[0] / length, direction_vector[1] / length)
-
         distance = CONTAINER_LENGTH * 1.5
         outdoor = Point()
         outdoor.x = base_point.x - res_vec[1] * distance
         outdoor.y = base_point.y + res_vec[0] * distance
-
         return outdoor
-
-    def execute(self, userdata):
-        global CENTER_PUB
-        rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
-
-        attempts = 5
-        cnt = 0
-        while cnt < attempts:
-            cnt += 1
-            client = actionlib.SimpleActionClient('detect_container', DetectAction)
-            client.wait_for_server()
-            goal = DetectGoal()
-            client.send_goal(goal)
-            client.wait_for_result()
-            res = client.get_result().corners
-            rospy.loginfo("RESULT: %s", res)
-
-            # 4 corners + 4 avg points
-            if res and len(res) == 8:
-                rospy.loginfo("CONTAINER DETECTED!")
-
-                container_corners = res[:4]
-
-                center = Point()
-                center.x = np.average([p.x for p in container_corners])
-                center.y = np.average([p.y for p in container_corners])
-
-                # point in front of container
-                outdoor = self.determine_point_in_front_of_container(container_corners)
-
-                CENTER_PUB.publish(center)
-                # TODO: move outdoor marker handling to correct pos when implemented
-                # publish_outdoor_marker(outdoor)
-                # publish_outdoor_marker(None, header)
-
-                angle = math.atan2(outdoor.y - center.y, outdoor.x - center.x)
-                center_res = self.compute_center(center, angle)
-
-                if center_res:
-                    rospy.loginfo("detected center: %s", center_res)
-                    if self.drive_in(center_res):
-                        userdata.drive_into_container_output = get_success_msg()
-                        # clear marker
-                        CENTER_PUB.publish(None)
-                        return 'succeeded'
-                    userdata.drive_into_container_output = get_failure_msg()
-                    return 'aborted'
-        rospy.loginfo("NUMBER OF CORNERS: %s", len(res))
-        userdata.drive_into_container_output = get_failure_msg()
-        return 'aborted'
 
 
 class LocalizeChargingStation(smach.State):
@@ -307,6 +362,11 @@ class Dock(smach.State):
 
 
 class DockingStateMachine(smach.StateMachine):
+    """
+    State machine for the procedure of docking the robot to the inductive charging station
+    inside the mobile container.
+    """
+
     def __init__(self):
         super(DockingStateMachine, self).__init__(
             outcomes=['failed', 'docked'],
@@ -315,7 +375,6 @@ class DockingStateMachine(smach.StateMachine):
         )
 
         with self:
-            # add states
             self.add('CONTAINER_PROXIMITY', ContainerProximity(), transitions={
                 'succeeded': 'DETECT_CONTAINER',
                 'aborted': 'failed'})
@@ -348,17 +407,10 @@ class DockingStateMachine(smach.StateMachine):
 
 
 def main():
+    global TF_BUFFER
     rospy.init_node('docking_smach')
-
-    global TF_BUFFER, CENTER_PUB, OUTDOOR_PUB, ENTRY_PUB
-
     TF_BUFFER = tf2_ros.Buffer()
     tf2_ros.TransformListener(TF_BUFFER)
-
-    CENTER_PUB = rospy.Publisher("/publish_center", Point, queue_size=1)
-    OUTDOOR_PUB = rospy.Publisher("/publish_outdoor", Point, queue_size=1)
-    ENTRY_PUB = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
-
     sm = DockingStateMachine()
 
     # construct action server wrapper
@@ -370,9 +422,7 @@ def main():
         goal_key='sm_input',
         result_key='sm_output'
     )
-
     rospy.loginfo("running action server wrapper..")
-
     # run the server in a background thread
     asw.run_server()
 
