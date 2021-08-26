@@ -20,11 +20,12 @@ DBG_SUB = None
 CLEAR_SUB = None
 
 
-def generate_line_marker(points):
+def publish_detected_lines(points):
+    global HOUGH_LINE_PUB
     """
-    Initializes the marker for detected lines.
+    Generates and publishes a line marker based on the specified points.
 
-    :return: initialized line marker
+    :param points: points to generate line marker with
     """
     lines = Marker()
     lines.header.frame_id = "base_link"
@@ -36,16 +37,18 @@ def generate_line_marker(points):
     lines.scale.x = 0.01
     lines.color.g = 1.0
     lines.color.a = 1.0
-    for p in list(points.points):
-        lines.points.append(p)
-    return lines
+    if len(points.points) == 0:
+        lines.points = []
+    else:
+        lines.points.extend(points.points)
+    HOUGH_LINE_PUB.publish(lines)
 
 
 def publish_dgb_points(points):
     """
-    Publishes the debugging points marker stored in DBG_POINTS.
+    Generates and publishes debugging markers to indicate line detection candidates.
 
-    :param header: point cloud header
+    :param points: currently considered points in line detection
     """
     global DBG_PUB
     marker = Marker()
@@ -65,7 +68,7 @@ def publish_dgb_points(points):
 
 def publish_corners(intersections):
     """
-    Publishes the detected container corners as marker points.
+    Generates and publishes markers for the detected container corners.
 
     :param intersections: container corners (where the sides intersect)
     """
@@ -83,6 +86,11 @@ def publish_corners(intersections):
 
 
 def publish_center_marker(center):
+    """
+    Generates and publishes a marker for the center point of the container.
+
+    :param center: container center
+    """
     global CENTER_MARKER_PUB
     marker = Marker()
     marker.header.frame_id = "base_link"
@@ -98,6 +106,11 @@ def publish_center_marker(center):
 
 
 def publish_outdoor_marker(outdoor):
+    """
+    Generates and publishes a marker for a point in front of the container entry.
+
+    :param outdoor: point in front of the container
+    """
     global OUTDOOR_MARKER_PUB
     marker = Marker()
     marker.header.frame_id = "base_link"
@@ -117,10 +130,9 @@ def publish_outdoor_marker(outdoor):
 
 def publish_container_entry_arrow(pose):
     """
-    Publishes the position of the container entry as arrow marker pointing towards the entry.
+    Generates and publishes an arrow indicating the position and direction of the container entry.
 
-    :param container_entry: point in front of the container entry
-    :param angle: orientation in front of the container
+    :param pose: position and orientation towards the container entry
     """
     global ENTRY_MARKER_PUB
     marker = Marker()
@@ -147,15 +159,15 @@ def publish_container_entry_arrow(pose):
 
 def clear_markers(str):
     """
-    Resets the outdated markers.
+    Resets the markers.
 
-    :param header: point cloud header
+    :param str: optional message
     """
     lst = PointArray()
     lst.points = []
     publish_corners(lst)
     publish_dgb_points(lst)
-    generate_line_marker(lst)
+    publish_detected_lines(lst)
 
 
 def node():
@@ -173,7 +185,7 @@ def node():
     OUTDOOR_MARKER_PUB = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
     ENTRY_MARKER_PUB = rospy.Publisher("/entry_point", Marker, queue_size=1)
 
-    LINE_SUB = rospy.Subscriber("/publish_lines", PointArray, generate_line_marker, queue_size=1)
+    LINE_SUB = rospy.Subscriber("/publish_lines", PointArray, publish_detected_lines, queue_size=1)
     CORNER_SUB = rospy.Subscriber("/publish_corners", PointArray, publish_corners, queue_size=1)
     CENTER_SUB = rospy.Subscriber("/publish_center", Point, publish_center_marker, queue_size=1)
     OUTDOOR_SUB = rospy.Subscriber("/publish_outdoor", Point, publish_outdoor_marker, queue_size=1)
