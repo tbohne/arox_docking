@@ -82,10 +82,12 @@ class DetectionServer:
         base_attempts = 0
         tested_base_lines = []
 
-        self.dbg_pub.publish([])
-        self.line_pub.publish([])
-
         while hough_space.max() > dynamic_acc_thresh_based_on_dist and base_lines_tested < 10 and base_attempts < 50:
+            # clear markers of previous detection run
+            self.dbg_pub.publish([])
+            self.line_pub.publish([])
+            self.corner_pub.publish([])
+
             # rospy.loginfo("testing new base line with %s points", hough_space.max())
             # base line parameters
             c, r = retrieve_best_line(hough_space)
@@ -130,10 +132,12 @@ class DetectionServer:
                                                  dynamic_acc_thresh_based_on_dist):
                     self.dbg_pub.publish(point_list)
                     p1, p2 = compute_line_points(theta, radius)
+                    self.line_pub.publish([p1, p2])
                     found_line_params.append((radius, theta))
                     update_avg_points(avg_points, point_list)
                 hough_copy[c][r] = 0
 
+            # at least two corners found
             if len(found_line_params) >= 3:
                 tmp = self.publish_detected_container(found_line_params)
                 if len(tmp) >= 2:
@@ -141,7 +145,7 @@ class DetectionServer:
                     self.corners = tmp
                     for p in avg_points:
                         self.corners.append(p)
-                self.line_pub.publish([p1, p2])
+                break
 
     def scan_callback(self, scan):
         """
