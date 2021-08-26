@@ -2,13 +2,16 @@
 import rospy
 from visualization_msgs.msg import Marker
 from std_msgs.msg import String
+from geometry_msgs.msg import Point
 from arox_docking.msg import PointArray
 
 HOUGH_LINE_PUB = None
 CORNER_MARKER_PUB = None
+CENTER_MARKER_PUB = None
 DBG_PUB = None
 LINE_SUB = None
 CORNER_SUB = None
+CENTER_SUB = None
 DBG_SUB = None
 CLEAR_SUB = None
 
@@ -75,6 +78,21 @@ def publish_corners(intersections):
     CORNER_MARKER_PUB.publish(marker)
 
 
+def publish_center_marker(center):
+    global CENTER_MARKER_PUB
+    marker = Marker()
+    marker.header.frame_id = "base_link"
+    marker.id = 1
+    marker.type = marker.POINTS
+    marker.action = marker.ADD
+    marker.pose.orientation.w = 1
+    if center:
+        marker.points = [center]
+        marker.scale.x = marker.scale.y = marker.scale.z = 0.4
+        marker.color.a = marker.color.g = marker.color.r = 1.0
+    CENTER_MARKER_PUB.publish(marker)
+
+
 def clear_markers(str):
     """
     Resets the outdated markers.
@@ -92,16 +110,18 @@ def node():
     """
     Node that provides visualization functionalities for certain features during the docking / undocking procedures.
     """
-    global HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, LINE_SUB, CORNER_SUB, DBG_SUB, CLEAR_SUB
+    global HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, LINE_SUB, CORNER_SUB, DBG_SUB, CLEAR_SUB, CENTER_MARKER_PUB, CENTER_SUB
 
     rospy.init_node("visualizer")
 
     HOUGH_LINE_PUB = rospy.Publisher("/hough_lines", Marker, queue_size=1)
     CORNER_MARKER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
     DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
+    CENTER_MARKER_PUB = rospy.Publisher("/center_point", Marker, queue_size=1)
 
     LINE_SUB = rospy.Subscriber("/publish_lines", PointArray, generate_line_marker, queue_size=1)
     CORNER_SUB = rospy.Subscriber("/publish_corners", PointArray, publish_corners, queue_size=1)
+    CENTER_SUB = rospy.Subscriber("/publish_center", Point, publish_center_marker, queue_size=1)
     DBG_SUB = rospy.Subscriber("/publish_dbg", PointArray, publish_dgb_points, queue_size=1)
     CLEAR_SUB = rospy.Subscriber("/clear_markers", String, clear_markers, queue_size=1)
 

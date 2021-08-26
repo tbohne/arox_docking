@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 import math
 
 import actionlib
@@ -17,51 +16,12 @@ from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
 from tf.transformations import quaternion_from_euler
 from visualization_msgs.msg import Marker
 
-
-def determine_point_in_front_of_container(corners):
-    base_point = Point()
-    for i in range(len(corners)):
-        for j in range(len(corners)):
-            if i != j:
-                if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[
-                    j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
-                    base_point.x = (corners[i].x + corners[j].x) / 2
-                    base_point.y = (corners[i].y + corners[j].y) / 2
-                    direction_vector = (corners[j].x - corners[i].x, corners[j].y - corners[i].y)
-                    break
-
-    length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
-    res_vec = (direction_vector[0] / length, direction_vector[1] / length)
-
-    distance = CONTAINER_LENGTH * 1.5
-    outdoor = Point()
-    outdoor.x = base_point.x - res_vec[1] * distance
-    outdoor.y = base_point.y + res_vec[0] * distance
-
-    return outdoor
-
-
 TF_BUFFER = None
 FAILURE = 50
 CENTER_DETECTION_ATTEMPTS = 30
-CENTER_MARKER_PUB = None
+CENTER_PUB = None
 OUTDOOR_MARKER_PUB = None
 ENTRY_MARKER_PUB = None
-
-
-def publish_center_marker(center):
-    global CENTER_MARKER_PUB
-    marker = Marker()
-    marker.header.frame_id = "base_link"
-    marker.id = 1
-    marker.type = marker.POINTS
-    marker.action = marker.ADD
-    marker.pose.orientation.w = 1
-    if center:
-        marker.points = [center]
-        marker.scale.x = marker.scale.y = marker.scale.z = 0.4
-        marker.color.a = marker.color.g = marker.color.r = 1.0
-    CENTER_MARKER_PUB.publish(marker)
 
 
 def publish_outdoor_marker(outdoor):
@@ -308,7 +268,30 @@ class DriveIntoContainer(smach.State):
         center.pose.orientation = Quaternion(*q)
         return center
 
+    def determine_point_in_front_of_container(self, corners):
+        base_point = Point()
+        for i in range(len(corners)):
+            for j in range(len(corners)):
+                if i != j:
+                    if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[
+                        j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
+                        base_point.x = (corners[i].x + corners[j].x) / 2
+                        base_point.y = (corners[i].y + corners[j].y) / 2
+                        direction_vector = (corners[j].x - corners[i].x, corners[j].y - corners[i].y)
+                        break
+
+        length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
+        res_vec = (direction_vector[0] / length, direction_vector[1] / length)
+
+        distance = CONTAINER_LENGTH * 1.5
+        outdoor = Point()
+        outdoor.x = base_point.x - res_vec[1] * distance
+        outdoor.y = base_point.y + res_vec[0] * distance
+
+        return outdoor
+
     def execute(self, userdata):
+        global CENTER_PUB
         rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
 
         attempts = 5
@@ -334,9 +317,9 @@ class DriveIntoContainer(smach.State):
                 center.y = np.average([p.y for p in container_corners])
 
                 # point in front of container
-                outdoor = determine_point_in_front_of_container(container_corners)
+                outdoor = self.determine_point_in_front_of_container(container_corners)
 
-                publish_center_marker(center)
+                CENTER_PUB.publish(center)
                 # TODO: move outdoor marker handling to correct pos when implemented
                 # publish_outdoor_marker(outdoor)
                 # publish_outdoor_marker(None, header)
@@ -349,7 +332,7 @@ class DriveIntoContainer(smach.State):
                     if self.drive_in(center_res):
                         userdata.drive_into_container_output = get_success_msg()
                         # clear marker
-                        publish_center_marker(None)
+                        CENTER_PUB.publish(None)
                         return 'succeeded'
                     userdata.drive_into_container_output = get_failure_msg()
                     return 'aborted'
@@ -432,14 +415,15 @@ class DockingStateMachine(smach.StateMachine):
 def main():
     rospy.init_node('docking_smach')
 
-    global TF_BUFFER, CENTER_MARKER_PUB, OUTDOOR_MARKER_PUB, ENTRY_MARKER_PUB
+    global TF_BUFFER, CENTER_PUB, OUTDOOR_MARKER_PUB, ENTRY_MARKER_PUB
 
     TF_BUFFER = tf2_ros.Buffer()
     tf2_ros.TransformListener(TF_BUFFER)
 
-    CENTER_MARKER_PUB = rospy.Publisher("/center_point", Marker, queue_size=1)
     OUTDOOR_MARKER_PUB = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
     ENTRY_MARKER_PUB = rospy.Publisher("/entry_point", Marker, queue_size=1)
+
+    CENTER_PUB = rospy.Publisher("/publish_center", Point, queue_size=1)
 
     sm = DockingStateMachine()
 
