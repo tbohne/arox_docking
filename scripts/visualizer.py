@@ -1,17 +1,21 @@
 #!/usr/bin/env python
 import rospy
-from visualization_msgs.msg import Marker
-from std_msgs.msg import String
-from geometry_msgs.msg import Point
 from arox_docking.msg import PointArray
+from geometry_msgs.msg import Point, PoseStamped
+from std_msgs.msg import String
+from visualization_msgs.msg import Marker
 
 HOUGH_LINE_PUB = None
 CORNER_MARKER_PUB = None
 CENTER_MARKER_PUB = None
+OUTDOOR_MARKER_PUB = None
+ENTRY_MARKER_PUB = None
 DBG_PUB = None
 LINE_SUB = None
 CORNER_SUB = None
 CENTER_SUB = None
+OUTDOOR_SUB = None
+ENTRY_SUB = None
 DBG_SUB = None
 CLEAR_SUB = None
 
@@ -93,6 +97,54 @@ def publish_center_marker(center):
     CENTER_MARKER_PUB.publish(marker)
 
 
+def publish_outdoor_marker(outdoor):
+    global OUTDOOR_MARKER_PUB
+    marker = Marker()
+    marker.header.frame_id = "base_link"
+    marker.id = 1
+    marker.type = marker.POINTS
+    marker.action = marker.ADD
+    marker.pose.orientation.w = 1
+    if outdoor:
+        marker.points = [outdoor]
+        marker.scale.x = marker.scale.y = marker.scale.z = 0.4
+        marker.color.a = 1.0
+        marker.color.r = 0.6
+        marker.color.g = 0.0
+        marker.color.b = 0.9
+    OUTDOOR_MARKER_PUB.publish(marker)
+
+
+def publish_container_entry_arrow(pose):
+    """
+    Publishes the position of the container entry as arrow marker pointing towards the entry.
+
+    :param container_entry: point in front of the container entry
+    :param angle: orientation in front of the container
+    """
+    global ENTRY_MARKER_PUB
+    marker = Marker()
+    marker.header.frame_id = "base_link"
+    marker.id = 1
+    marker.type = Marker.ARROW
+    marker.action = Marker.ADD
+
+    if pose:
+        marker.pose.position = pose.pose.position
+        marker.pose.orientation = pose.pose.orientation
+
+        marker.scale.x = 0.75
+        marker.scale.y = 0.2
+        marker.scale.z = 0.0
+
+        marker.color.r = 0
+        marker.color.g = 0
+        marker.color.b = 1.0
+        marker.color.a = 1.0
+
+    ENTRY_MARKER_PUB.publish(marker)
+
+
 def clear_markers(str):
     """
     Resets the outdated markers.
@@ -110,7 +162,7 @@ def node():
     """
     Node that provides visualization functionalities for certain features during the docking / undocking procedures.
     """
-    global HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, LINE_SUB, CORNER_SUB, DBG_SUB, CLEAR_SUB, CENTER_MARKER_PUB, CENTER_SUB
+    global HOUGH_LINE_PUB, CORNER_MARKER_PUB, DBG_PUB, LINE_SUB, CORNER_SUB, DBG_SUB, CLEAR_SUB, CENTER_MARKER_PUB, CENTER_SUB, OUTDOOR_MARKER_PUB, OUTDOOR_SUB, ENTRY_MARKER_PUB, ENTRY_SUB
 
     rospy.init_node("visualizer")
 
@@ -118,10 +170,14 @@ def node():
     CORNER_MARKER_PUB = rospy.Publisher("/corner_points", Marker, queue_size=1)
     DBG_PUB = rospy.Publisher("/dbg_points", Marker, queue_size=1)
     CENTER_MARKER_PUB = rospy.Publisher("/center_point", Marker, queue_size=1)
+    OUTDOOR_MARKER_PUB = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
+    ENTRY_MARKER_PUB = rospy.Publisher("/entry_point", Marker, queue_size=1)
 
     LINE_SUB = rospy.Subscriber("/publish_lines", PointArray, generate_line_marker, queue_size=1)
     CORNER_SUB = rospy.Subscriber("/publish_corners", PointArray, publish_corners, queue_size=1)
     CENTER_SUB = rospy.Subscriber("/publish_center", Point, publish_center_marker, queue_size=1)
+    OUTDOOR_SUB = rospy.Subscriber("/publish_outdoor", Point, publish_outdoor_marker, queue_size=1)
+    ENTRY_SUB = rospy.Subscriber("/publish_entry", PoseStamped, publish_container_entry_arrow, queue_size=1)
     DBG_SUB = rospy.Subscriber("/publish_dbg", PointArray, publish_dgb_points, queue_size=1)
     CLEAR_SUB = rospy.Subscriber("/clear_markers", String, clear_markers, queue_size=1)
 

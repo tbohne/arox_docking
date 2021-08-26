@@ -14,65 +14,13 @@ from arox_docking.util import dist
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
 from tf.transformations import quaternion_from_euler
-from visualization_msgs.msg import Marker
 
 TF_BUFFER = None
 FAILURE = 50
 CENTER_DETECTION_ATTEMPTS = 30
 CENTER_PUB = None
-OUTDOOR_MARKER_PUB = None
-ENTRY_MARKER_PUB = None
-
-
-def publish_outdoor_marker(outdoor):
-    global OUTDOOR_MARKER_PUB
-    marker = Marker()
-    marker.header.frame_id = "base_link"
-    marker.id = 1
-    marker.type = marker.POINTS
-    marker.action = marker.ADD
-    marker.pose.orientation.w = 1
-    if outdoor:
-        marker.points = [outdoor]
-        marker.scale.x = marker.scale.y = marker.scale.z = 0.4
-        marker.color.a = 1.0
-        marker.color.r = 0.6
-        marker.color.g = 0.0
-        marker.color.b = 0.9
-    OUTDOOR_MARKER_PUB.publish(marker)
-
-
-def publish_container_entry_arrow(container_entry, angle):
-    """
-    Publishes the position of the container entry as arrow marker pointing towards the entry.
-
-    :param container_entry: point in front of the container entry
-    :param angle: orientation in front of the container
-    """
-    global ENTRY_MARKER_PUB
-    marker = Marker()
-    marker.header.frame_id = "base_link"
-    marker.id = 1
-    marker.type = Marker.ARROW
-    marker.action = Marker.ADD
-
-    if container_entry:
-        marker.pose.position.x = container_entry.x
-        marker.pose.position.y = container_entry.y
-
-        q = quaternion_from_euler(0, 0, angle)
-        marker.pose.orientation = Quaternion(*q)
-
-        marker.scale.x = 0.75
-        marker.scale.y = 0.2
-        marker.scale.z = 0.0
-
-        marker.color.r = 0
-        marker.color.g = 0
-        marker.color.b = 1.0
-        marker.color.a = 1.0
-
-    ENTRY_MARKER_PUB.publish(marker)
+OUTDOOR_PUB = None
+ENTRY_PUB = None
 
 
 def transform_pose(pose_stamped, target_frame):
@@ -164,7 +112,6 @@ class DetectContainer(smach.State):
         :param container_entry: position in front of the container entry
         :param angle: orientation in front of the container
         """
-        global ENTRY_PUB
         goal = PoseStamped()
         goal.header.frame_id = "base_link"
         goal.header.stamp = rospy.Time.now()
@@ -176,6 +123,7 @@ class DetectContainer(smach.State):
         return goal
 
     def execute(self, userdata):
+        global ENTRY_PUB
         rospy.loginfo('executing state DETECT_CONTAINER')
 
         client = actionlib.SimpleActionClient('detect_container', DetectAction)
@@ -189,7 +137,13 @@ class DetectContainer(smach.State):
             rospy.loginfo("detected entry: %s", res)
             base_point, container_entry = self.determine_container_entry(res)
             angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
-            publish_container_entry_arrow(container_entry, angle)
+
+            pose = PoseStamped()
+            pose.pose.position = container_entry
+            q = quaternion_from_euler(0, 0, angle)
+            pose.pose.orientation = Quaternion(*q)
+            ENTRY_PUB.publish(pose)
+
             userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
             return 'succeeded'
         return 'aborted'
@@ -202,6 +156,7 @@ class AlignRobotToRamp(smach.State):
                              output_keys=['align_robot_to_ramp_output'])
 
     def execute(self, userdata):
+        global ENTRY_PUB
         rospy.loginfo('executing state ALIGN_ROBOT_TO_RAMP')
 
         if userdata.align_robot_to_ramp_input:
@@ -225,7 +180,7 @@ class AlignRobotToRamp(smach.State):
             rospy.loginfo("sleeping for 5s...")
             rospy.sleep(5)
             # clear arrow maker
-            publish_container_entry_arrow(None, None)
+            ENTRY_PUB.publish(PoseStamped())
             return 'succeeded'
         return 'aborted'
 
@@ -415,15 +370,14 @@ class DockingStateMachine(smach.StateMachine):
 def main():
     rospy.init_node('docking_smach')
 
-    global TF_BUFFER, CENTER_PUB, OUTDOOR_MARKER_PUB, ENTRY_MARKER_PUB
+    global TF_BUFFER, CENTER_PUB, OUTDOOR_PUB, ENTRY_PUB
 
     TF_BUFFER = tf2_ros.Buffer()
     tf2_ros.TransformListener(TF_BUFFER)
 
-    OUTDOOR_MARKER_PUB = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
-    ENTRY_MARKER_PUB = rospy.Publisher("/entry_point", Marker, queue_size=1)
-
     CENTER_PUB = rospy.Publisher("/publish_center", Point, queue_size=1)
+    OUTDOOR_PUB = rospy.Publisher("/publish_outdoor", Point, queue_size=1)
+    ENTRY_PUB = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
 
     sm = DockingStateMachine()
 
