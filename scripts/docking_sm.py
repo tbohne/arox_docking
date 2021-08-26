@@ -6,11 +6,10 @@ import numpy as np
 import rospy
 import smach
 import smach_ros
-import tf2_geometry_msgs
 import tf2_ros
 from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON
 from arox_docking.msg import DockAction, DetectAction, DetectGoal
-from arox_docking.util import dist
+from arox_docking.util import dist, transform_pose
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
 from tf.transformations import quaternion_from_euler
@@ -21,25 +20,6 @@ CENTER_DETECTION_ATTEMPTS = 30
 CENTER_PUB = None
 OUTDOOR_PUB = None
 ENTRY_PUB = None
-
-
-def transform_pose(pose_stamped, target_frame):
-    global TF_BUFFER
-
-    try:
-        transform = TF_BUFFER.lookup_transform(target_frame,
-                                               pose_stamped.header.frame_id,  # source frame
-                                               rospy.Time(0),  # get tf at first available time
-                                               rospy.Duration(1.0))  # wait for one second
-
-        pose_transformed = tf2_geometry_msgs.do_transform_pose(pose_stamped, transform)
-
-    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-        print("Exception while trying to transform pose stamped from %s to %s", pose_stamped.header.frame_id,
-              target_frame)
-        raise
-
-    return pose_transformed
 
 
 def get_failure_msg():
@@ -162,7 +142,7 @@ class AlignRobotToRamp(smach.State):
         if userdata.align_robot_to_ramp_input:
             rospy.loginfo("got userdata: %s", userdata.align_robot_to_ramp_input)
             pose_stamped = userdata.align_robot_to_ramp_input
-            pose_stamped = transform_pose(pose_stamped, "map")
+            pose_stamped = transform_pose(TF_BUFFER, pose_stamped, "map")
             move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
             move_base_client.wait_for_server()
 
@@ -192,7 +172,7 @@ class DriveIntoContainer(smach.State):
                              output_keys=['drive_into_container_output'])
 
     def drive_in(self, center_pos):
-        pose_stamped = transform_pose(center_pos, 'map')
+        pose_stamped = transform_pose(TF_BUFFER, center_pos, 'map')
         move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
         move_base_client.wait_for_server()
 

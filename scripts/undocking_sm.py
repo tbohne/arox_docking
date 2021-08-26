@@ -1,37 +1,16 @@
 #!/usr/bin/env python
 
+import actionlib
 import rospy
 import smach
 import smach_ros
-import actionlib
-
 import tf2_ros
-import tf2_geometry_msgs
-
-from geometry_msgs.msg import PoseStamped
 from arox_docking.msg import DockAction
-from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal, MoveBaseActionGoal
+from arox_docking.util import transform_pose
+from geometry_msgs.msg import PoseStamped
+from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
 
 TF_BUFFER = None
-
-
-def transform_pose(pose_stamped, target_frame):
-    global TF_BUFFER
-
-    try:
-        transform = TF_BUFFER.lookup_transform(target_frame,
-                                               pose_stamped.header.frame_id,  # source frame
-                                               rospy.Time(0),  # get tf at first available time
-                                               rospy.Duration(1.0))  # wait for one second
-
-        pose_transformed = tf2_geometry_msgs.do_transform_pose(pose_stamped, transform)
-
-    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-        print("Exception while trying to transform pose stamped from %s to %s", pose_stamped.header.frame_id,
-              target_frame)
-        raise
-
-    return pose_transformed
 
 
 # initial state
@@ -88,7 +67,7 @@ class DriveOutOfContainer(smach.State):
             rospy.loginfo("got userdata: %s", userdata.drive_out_of_container_input)
 
             pose_stamped = userdata.drive_out_of_container_input
-            pose_stamped = transform_pose(pose_stamped, 'map')
+            pose_stamped = transform_pose(TF_BUFFER, pose_stamped, 'map')
 
             move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
             move_base_client.wait_for_server()
