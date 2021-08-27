@@ -50,8 +50,14 @@ class DetectionServer:
         self.clear_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
         result = DetectResult()
-        # give it some time to detect the container, e.g. 5s
-        rospy.sleep(5)
+
+        # TODO: experiment with values / remove hard coded
+        attempts = 30
+        # give it some time to detect the container, but check after every 3s if it's done
+        for i in range(attempts):
+            if self.corners:
+                break
+            rospy.sleep(3)
 
         if self.corners:
             rospy.loginfo("CORNER DETECTION SUCCEEDED!!")
@@ -138,6 +144,7 @@ class DetectionServer:
                 hough_copy[c][r] = 0
 
             # at least two corners found
+            rospy.loginfo("FOUND LINE PARAMS: %s", len(found_line_params))
             if len(found_line_params) >= 3:
                 tmp = self.publish_detected_container(found_line_params)
                 if len(tmp) >= 2:
@@ -528,7 +535,7 @@ def determine_thresh_based_on_dist_to_robot(dist_to_robot):
     """
     # TODO: to be refined based on experiments
     if dist_to_robot < 3:
-        return 50
+        return 20
     elif dist_to_robot < 5:
         return 15
     elif dist_to_robot < 7:
