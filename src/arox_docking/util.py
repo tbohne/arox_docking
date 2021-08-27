@@ -4,6 +4,31 @@ import math
 import rospy
 import tf2_geometry_msgs
 import tf2_ros
+from arox_docking.msg import DockAction
+
+FAILURE = 50
+
+
+def get_failure_msg():
+    """
+    Generates a failure message.
+
+    :return: failure message
+    """
+    msg = DockAction
+    msg.result_state = "failure"
+    return msg
+
+
+def get_success_msg():
+    """
+    Generates a success message.
+
+    :return: success message
+    """
+    msg = DockAction
+    msg.result_state = "success"
+    return msg
 
 
 def dist(p1, p2):

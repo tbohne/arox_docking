@@ -9,35 +9,12 @@ import smach_ros
 import tf2_ros
 from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON
 from arox_docking.msg import DockAction, DetectAction, DetectGoal
-from arox_docking.util import dist, transform_pose
+from arox_docking.util import dist, transform_pose, FAILURE, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
 from tf.transformations import quaternion_from_euler
 
-FAILURE = 50
 TF_BUFFER = None
-
-
-def get_failure_msg():
-    """
-    Generates a failure message.
-
-    :return: failure message
-    """
-    msg = DockAction
-    msg.result_state = "failure"
-    return msg
-
-
-def get_success_msg():
-    """
-    Generates a success message.
-
-    :return: success message
-    """
-    msg = DockAction
-    msg.result_state = "success"
-    return msg
 
 
 class ContainerProximity(smach.State):
@@ -249,7 +226,7 @@ class DriveIntoContainer(smach.State):
                     if self.drive_in(center_res):
                         userdata.drive_into_container_output = get_success_msg()
                         # clear marker
-                        self.center_pub.publish(PoseStamped())
+                        self.center_pub.publish(Point())
                         return 'succeeded'
                     userdata.drive_into_container_output = get_failure_msg()
                     return 'aborted'
