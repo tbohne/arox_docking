@@ -25,23 +25,23 @@ def start_smach():
         rospy.loginfo("DOCKING PROCEDURE FINISHED: %s", docking_client.get_result().result_state)
 
         rospy.loginfo("sleeping a moment..")
-        # rospy.sleep(25)
-        #
-        # undocking_client = actionlib.SimpleActionClient('undock_from_charging_station', DockAction)
-        # goal_msg = DockAction().action_goal
-        # goal_msg.goal = "custom_goal"
-        # undocking_client.wait_for_server()
-        # rospy.loginfo("START UNDOCKING PROCEDURE..")
-        # undocking_client.send_goal(goal_msg)
-        # rospy.loginfo("goal sent, wait for accomplishment")
-        #
-        # success = undocking_client.wait_for_result()
-        #
-        # if success:
-        #     rospy.loginfo("SMACH execution terminated successfully")
-        #     rospy.loginfo("UNDOCKING PROCEDURE FINISHED: %s", docking_client.get_result().result_state)
-        # else:
-        #     rospy.loginfo("SMACH execution failed: %s", docking_client.get_goal_status_text())
+        rospy.sleep(15)
+
+        undocking_client = actionlib.SimpleActionClient('undock_from_charging_station', DockAction)
+        goal_msg = DockAction().action_goal
+        goal_msg.goal = "custom_goal"
+        undocking_client.wait_for_server()
+        rospy.loginfo("START UNDOCKING PROCEDURE..")
+        undocking_client.send_goal(goal_msg)
+        rospy.loginfo("goal sent, wait for accomplishment")
+
+        success = undocking_client.wait_for_result()
+
+        if success:
+            rospy.loginfo("SMACH execution terminated successfully")
+            rospy.loginfo("UNDOCKING PROCEDURE FINISHED: %s", docking_client.get_result().result_state)
+        else:
+            rospy.loginfo("SMACH execution failed: %s", docking_client.get_goal_status_text())
 
     else:
         rospy.loginfo("SMACH execution failed: %s", docking_client.get_goal_status_text())
