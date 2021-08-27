@@ -4,6 +4,8 @@
 
     <param name="/use_sim_time" value="true" />
 
+    <node pkg="arox_docking" type="visualizer.py" name="visualizer" respawn="true" output="screen" />
+
     <node pkg="arox_docking" type="detect_container_entry.py" name="detect_container_entry" respawn="true" output="screen" />
 
     <node pkg="arox_docking" type="docking_sm.py" name="docking_smach" respawn="true" output="screen" />
