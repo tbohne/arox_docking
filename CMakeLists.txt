@@ -166,7 +166,7 @@ include_directories(
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(
     PROGRAMS
-    scripts/detect_container_entry.py
+    scripts/detect_container.py
     scripts/docking_sm.py
     scripts/undocking_sm.py
     scripts/start_smach.py

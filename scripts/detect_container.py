@@ -566,7 +566,7 @@ def node():
     """
     Node to detect the container entry in a laser scan.
     """
-    rospy.init_node("detect_container_entry")
+    rospy.init_node("detect_container")
     server = DetectionServer()
     rospy.spin()
 
