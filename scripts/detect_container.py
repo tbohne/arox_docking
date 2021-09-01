@@ -38,7 +38,7 @@ class DetectionServer:
         # reset detected corners
         self.corners = None
         # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
-        self.scan_sub = rospy.Subscriber("/scanVelodyne", LaserScan, self.scan_callback, queue_size=1,
+        self.scan_sub = rospy.Subscriber("/scanVelodyneFrame", LaserScan, self.scan_callback, queue_size=1,
                                          buff_size=2 ** 32)
         # subscribe to robot pose (ground truth)
         self.pose_sub = rospy.Subscriber("/pose_ground_truth", Odometry, self.odom_callback, queue_size=1)
@@ -555,10 +555,12 @@ def get_points_from_scan(scan):
     for index, point in enumerate(scan.ranges):
         if point < scan.range_min or point >= scan.range_max:
             continue
+
         # transform points from polar to cartesian coordinates
         x = point * np.cos(scan.angle_min + index * scan.angle_increment)
         y = point * np.sin(scan.angle_min + index * scan.angle_increment)
         points.append((x, y))
+
     return points
 
 
@@ -574,5 +576,5 @@ def node():
 if __name__ == '__main__':
     try:
         node()
-    except rospy.ROSInterruptExceptionexecute:
+    except rospy.ROSInterruptException:
         pass
