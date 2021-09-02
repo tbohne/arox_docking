@@ -68,6 +68,7 @@ add_action_files(
   FILES
   Dock.action
   Detect.action
+  Localize.action
 )
 
 ## Generate added messages and services with any dependencies listed here
@@ -167,6 +168,7 @@ include_directories(
 catkin_install_python(
     PROGRAMS
     scripts/detect_container.py
+    scripts/localize_charging_station.py
     scripts/docking_sm.py
     scripts/undocking_sm.py
     scripts/start_smach.py
