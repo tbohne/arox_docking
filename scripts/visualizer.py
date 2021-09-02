@@ -15,6 +15,7 @@ class Visualizer:
         self.outdoor_pub = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
         self.entry_pub = rospy.Publisher("/entry_point", Marker, queue_size=1)
         self.dbg_pub = rospy.Publisher("/dbg_points", Marker, queue_size=1)
+        self.charging_station_pub = rospy.Publisher("/charging_station", Marker, queue_size=1)
 
         self.line_sub = rospy.Subscriber("/publish_lines", PointArray, self.publish_detected_lines, queue_size=1)
         self.corner_sub = rospy.Subscriber("/publish_corners", PointArray, self.publish_corners, queue_size=1)
@@ -23,6 +24,8 @@ class Visualizer:
         self.entry_sub = rospy.Subscriber("/publish_entry", PoseStamped, self.publish_container_entry_arrow,
                                           queue_size=1)
         self.dbg_sub = rospy.Subscriber("/publish_dbg", PointArray, self.publish_dgb_points, queue_size=1)
+        self.charging_station_sub = rospy.Subscriber("/publish_charging_station", Point, self.publish_charging_station,
+                                                     queue_size=1)
         self.clear_sub = rospy.Subscriber("/clear_markers", String, self.clear_markers, queue_size=1)
 
         self.line_marker = None
@@ -31,6 +34,7 @@ class Visualizer:
         self.center_marker = None
         self.outdoor_marker = None
         self.entry_marker = None
+        self.charging_maker = None
 
         self.init_line_marker()
         self.init_dbg_marker()
@@ -38,6 +42,7 @@ class Visualizer:
         self.init_center_marker()
         self.init_outdoor_marker()
         self.init_entry_marker()
+        self.init_charging_marker()
 
     def init_line_marker(self):
         """
@@ -135,6 +140,31 @@ class Visualizer:
         if center:
             self.center_marker.points = [center]
         self.center_pub.publish(self.center_marker)
+
+    def init_charging_marker(self):
+        """
+        Initializes the marker for the charging station.
+        """
+        self.charging_maker = Marker()
+        self.charging_maker.header.frame_id = "base_link"
+        self.charging_maker.id = 1
+        self.charging_maker.type = self.charging_maker.POINTS
+        self.charging_maker.action = self.charging_maker.ADD
+        self.charging_maker.pose.orientation.w = 1
+        self.charging_maker.scale.x = self.charging_maker.scale.y = self.charging_maker.scale.z = 0.4
+        self.charging_maker.color.a = 1.0
+        self.charging_maker.color.r = 0.33
+        self.charging_maker.color.g = self.charging_maker.color.b = 1.0
+
+    def publish_charging_station(self, point):
+        """
+        Generates and publishes a marker for the charging station inside the container.
+
+        :param point: coordinates of the charging station
+        """
+        if point:
+            self.charging_maker.points = [point]
+        self.charging_station_pub.publish(self.charging_maker)
 
     def init_outdoor_marker(self):
         """
