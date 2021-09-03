@@ -1,17 +1,19 @@
 #!/usr/bin/env python
+import math
+
 import actionlib
+import numpy as np
 import rospy
 import smach
 import smach_ros
-import math
 import tf2_ros
 from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON
 from arox_docking.msg import DockAction, DetectAction, DetectGoal
 from arox_docking.util import transform_pose, dist, FAILURE, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
-import numpy as np
 from tf.transformations import quaternion_from_euler
+from nav_msgs.msg import Odometry
 
 TF_BUFFER = None
 
@@ -41,12 +43,24 @@ class DetectEntry(smach.State):
     """
     State to detect the entry of the container from within.
     """
+
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['detect_entry_input'],
                              output_keys=['detect_entry_output'])
 
+        self.robot_pos = None
+        # subscribe to robot pose (ground truth)
+        self.pose_sub = rospy.Subscriber("/pose_ground_truth", Odometry, self.odom_callback, queue_size=1)
         self.outdoor_pub = rospy.Publisher("/publish_outdoor", Point, queue_size=1)
+
+    def odom_callback(self, odom):
+        """
+        Is called whenever new odometry data arrives.
+
+        :param odom: odometry data to update robot pos with
+        """
+        self.robot_pos = odom.twist.twist.linear
 
     def execute(self, userdata):
         """
@@ -93,6 +107,80 @@ class DetectEntry(smach.State):
         userdata.detect_entry_output = get_failure_msg()
         return 'aborted'
 
+    def front_or_back_detected(self, first_corner, second_corner):
+        return CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(first_corner, second_corner) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON
+
+    def compute_direction_vector(self, first_corner, second_corner):
+        if dist(self.robot_pos, first_corner) < dist(self.robot_pos, second_corner):
+            return second_corner.x - first_corner.x, second_corner.y - first_corner.y
+        else:
+            return first_corner.x - second_corner.x, first_corner.y - second_corner.y
+
+    def determine_point_in_front_of_container(self, corners):
+        """
+        Computes a point in front of the container.
+
+        :param corners: detected corner points of the container
+        :return: outdoor point
+        """
+        base_point = None
+        direction_vector = Point()
+        detected_entries = 0
+        used_corners = []
+
+        # whole container detected
+        if len(corners) == 4:
+            for i in range(len(corners) - 1):
+                if i in used_corners:
+                    continue
+                for j in range(i + 1, len(corners)):
+                    if j in used_corners:
+                        continue
+                    # front or back of the container -> there are two options
+                    if self.front_or_back_detected(corners[i], corners[j]):
+                        detected_entries += 1
+                        if base_point is None:
+                            base_point = Point()
+                            base_point.x = (corners[i].x + corners[j].x) / 2
+                            base_point.y = (corners[i].y + corners[j].y) / 2
+                            direction_vector = self.compute_direction_vector(corners[i], corners[j])
+                            used_corners.extend([i, j])
+                        else:
+                            tmp = Point()
+                            tmp.x = (corners[i].x + corners[j].x) / 2
+                            tmp.y = (corners[i].y + corners[j].y) / 2
+                            # the one that's closer to the robot pos is the one to choose
+                            if dist(tmp, self.robot_pos) < dist(base_point, self.robot_pos):
+                                base_point = tmp
+                                direction_vector = self.compute_direction_vector(corners[i], corners[j])
+                                used_corners.extend([i, j])
+                            break
+
+        # only entry detected
+        elif len(corners) == 2:
+            # TODO
+            rospy.loginfo("ONLY ENTRY DETECTED -- TO BE IMPLEMENTED")
+            # actually it might be a valid assumption to be able to detect all 4 corners from within
+            # -> implement failure here
+
+        # both (front and back) should be considered
+        assert detected_entries == 2
+
+        length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
+        res_vec = (direction_vector[0] / length, direction_vector[1] / length)
+        distance = CONTAINER_LENGTH
+        outdoor = Point()
+
+        # now we need to find out at which side the robot is located (closer to which of the two corners)
+        if res_vec[1] > 0:  # "left to right"
+            outdoor.x = base_point.x + res_vec[1] * distance
+            outdoor.y = base_point.y - res_vec[0] * distance
+        else:  # "right to left"
+            outdoor.x = base_point.x - res_vec[1] * distance
+            outdoor.y = base_point.y + res_vec[0] * distance
+
+        return outdoor
+
     @staticmethod
     def compute_outdoor(outdoor_point, angle):
         """
@@ -110,44 +198,6 @@ class DetectEntry(smach.State):
         outdoor.pose.position.z = 0.0
         q = quaternion_from_euler(0, 0, angle)
         outdoor.pose.orientation = Quaternion(*q)
-        return outdoor
-
-    @staticmethod
-    def determine_point_in_front_of_container(corners):
-        """
-        Computes a point in front of the container.
-
-        :param corners: detected corner points of the container
-        :return: outdoor point
-        """
-
-        base_point = Point()
-        direction_vector = Point()
-
-        # whole container detected
-        if len(corners) == 4:
-            for i in range(len(corners)):
-                for j in range(len(corners)):
-                    if i != j:
-                        if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[
-                            j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
-                            base_point.x = (corners[i].x + corners[j].x) / 2
-                            base_point.y = (corners[i].y + corners[j].y) / 2
-                            direction_vector = (corners[j].x - corners[i].x, corners[j].y - corners[i].y)
-                            break
-        # only entry detected
-        elif len(corners) == 2:
-            base_point.x = (corners[0].x + corners[1].x) / 2
-            base_point.y = (corners[0].y + corners[1].y) / 2
-            direction_vector = (corners[1].x - corners[0].x, corners[1].y - corners[0].y)
-
-        length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
-        res_vec = (direction_vector[0] / length, direction_vector[1] / length)
-        distance = CONTAINER_LENGTH * 1.5
-        outdoor = Point()
-        outdoor.x = base_point.x - res_vec[1] * distance
-        outdoor.y = base_point.y + res_vec[0] * distance
-
         return outdoor
 
 

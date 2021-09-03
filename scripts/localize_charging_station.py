@@ -52,8 +52,8 @@ class LocalizationServer:
         B.y = corners[1].y
 
         goal = Point()
-        goal.x = (self.robot_pos.x + B.x) / 3
-        goal.y = (self.robot_pos.y + B.y) / 3
+        goal.x = (self.robot_pos.x + B.x) / 2
+        goal.y = (self.robot_pos.y + B.y) / 2
 
         angle = math.atan2(A.y - B.y, A.x - B.x)
 
