@@ -8,7 +8,7 @@ import smach
 import smach_ros
 import tf2_ros
 from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON
-from arox_docking.msg import DockAction, DetectAction, DetectGoal
+from arox_docking.msg import DockAction, DetectAction, DetectGoal, LocalizeGoal, LocalizeAction
 from arox_docking.util import dist, transform_pose, FAILURE, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
@@ -310,21 +310,59 @@ class DriveIntoContainer(smach.State):
 
 class LocalizeChargingStation(smach.State):
     def __init__(self):
-        smach.State.__init__(self, outcomes=['succeeded', 'aborted'])
+        smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
+                             input_keys=['localize_charging_station_input'],
+                             output_keys=['localize_charging_station_output'])
 
     @staticmethod
     def execute(userdata):
         rospy.loginfo('executing state LOCALIZE_CHARGING_STATION')
-        return 'succeeded'
+
+        client = actionlib.SimpleActionClient('localize_charging_station', LocalizeAction)
+        client.wait_for_server()
+        goal = LocalizeGoal()
+        client.send_goal(goal)
+        client.wait_for_result()
+        res = client.get_result().station_pos
+
+        if res:
+            rospy.loginfo("DETECTED CHARGING STATION: %s", res)
+            pose = transform_pose(TF_BUFFER, res, 'map')
+            userdata.localize_charging_station_output = pose
+            return 'succeeded'
+
+        userdata.drive_into_container_output = get_failure_msg()
+        return 'aborted'
 
 
 class AlignRobotToChargingStation(smach.State):
     def __init__(self):
-        smach.State.__init__(self, outcomes=['succeeded', 'aborted'])
+        smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
+                             input_keys=['align_robot_to_charging_station_input'],
+                             output_keys=['align_robot_to_charging_station_output'])
 
     @staticmethod
     def execute(userdata):
         rospy.loginfo('executing state ALIGN_ROBOT_TO_CHARGING_STATION')
+
+        move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
+        move_base_client.wait_for_server()
+
+        goal = MoveBaseGoal()
+        goal.target_pose.header.frame_id = "map"
+        goal.target_pose.header.stamp = rospy.Time.now()
+
+        charging_station_pose = userdata.align_robot_to_charging_station_input
+        goal.target_pose.pose.position = charging_station_pose.pose.position
+        goal.target_pose.pose.orientation = charging_station_pose.pose.orientation
+
+        move_base_client.send_goal(goal)
+        rospy.loginfo("now waiting...")
+        move_base_client.wait_for_result()
+
+        if move_base_client.get_result().outcome == FAILURE:
+            rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
+            return 'aborted'
         return 'succeeded'
 
 
@@ -371,13 +409,13 @@ class DockingStateMachine(smach.StateMachine):
                                   'aborted': 'failed'},
                      remapping={'drive_into_container_output': 'sm_output'})
 
-            self.add('LOCALIZE_CHARGING_STATION', LocalizeChargingStation(), transitions={
-                'succeeded': 'ALIGN_ROBOT_TO_CHARGING_STATION',
-                'aborted': 'failed'})
+            self.add('LOCALIZE_CHARGING_STATION', LocalizeChargingStation(),
+                     transitions={'succeeded': 'ALIGN_ROBOT_TO_CHARGING_STATION', 'aborted': 'failed'},
+                     remapping={'localize_charging_station_output': 'sm_input'})
 
-            self.add('ALIGN_ROBOT_TO_CHARGING_STATION', AlignRobotToChargingStation(), transitions={
-                'succeeded': 'DOCK',
-                'aborted': 'failed'})
+            self.add('ALIGN_ROBOT_TO_CHARGING_STATION', AlignRobotToChargingStation(),
+                     transitions={'succeeded': 'DOCK', 'aborted': 'failed'},
+                     remapping={'align_robot_to_charging_station_input': 'sm_input'})
 
             self.add('DOCK', Dock(),
                      transitions={'succeeded': 'docked', 'aborted': 'failed'})

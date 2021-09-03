@@ -8,6 +8,8 @@
 
     <node pkg="arox_docking" type="detect_container.py" name="detect_container" respawn="true" output="screen" />
 
+    <node pkg="arox_docking" type="localize_charging_station.py" name="localize_charging_station" respawn="true" output="screen" />
+
     <node pkg="arox_docking" type="docking_sm.py" name="docking_smach" respawn="true" output="screen" />
 
     <node pkg="arox_docking" type="undocking_sm.py" name="undocking_smach" respawn="true" output="screen" />
