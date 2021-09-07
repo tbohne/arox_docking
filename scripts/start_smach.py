@@ -39,9 +39,9 @@ def start_smach():
 
         if success:
             rospy.loginfo("SMACH execution terminated successfully")
-            rospy.loginfo("UNDOCKING PROCEDURE FINISHED: %s", docking_client.get_result().result_state)
+            rospy.loginfo("UNDOCKING PROCEDURE FINISHED: %s", undocking_client.get_result().result_state)
         else:
-            rospy.loginfo("SMACH execution failed: %s", docking_client.get_goal_status_text())
+            rospy.loginfo("SMACH execution failed: %s", undocking_client.get_goal_status_text())
 
     else:
         rospy.loginfo("SMACH execution failed: %s", docking_client.get_goal_status_text())
