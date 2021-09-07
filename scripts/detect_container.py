@@ -541,10 +541,12 @@ def determine_thresh_based_on_dist_to_robot(dist_to_robot):
     :return: accumulator threshold
     """
     # TODO: to be refined based on experiments
-    if dist_to_robot < 3:
+    if dist_to_robot < 2:
+        return 30
+    elif dist_to_robot < 3:
         return 25
-    elif dist_to_robot < 5:
-        return 15
+    elif dist_to_robot < 4:
+        return 20
     elif dist_to_robot < 7:
         return 10
     else:
