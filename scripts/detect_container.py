@@ -2,14 +2,17 @@
 import actionlib
 import numpy as np
 import rospy
+import tf2_ros
 from arox_docking import config
 from arox_docking.msg import DetectAction, DetectResult
 from arox_docking.msg import PointArray
-from arox_docking.util import dist
-from geometry_msgs.msg import Point
+from arox_docking.util import dist, transform_pose
+from geometry_msgs.msg import Point, PoseStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
+
+TF_BUFFER = None
 
 
 class DetectionServer:
@@ -41,7 +44,7 @@ class DetectionServer:
         self.scan_sub = rospy.Subscriber("/scanVelodyneFrame", LaserScan, self.scan_callback, queue_size=1,
                                          buff_size=2 ** 32)
         # subscribe to robot pose (ground truth)
-        self.pose_sub = rospy.Subscriber("/pose_ground_truth", Odometry, self.odom_callback, queue_size=1)
+        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
 
         # publishers for debugging markers (visualizations)
         self.line_pub = rospy.Publisher("/publish_lines", PointArray, queue_size=1)
@@ -212,9 +215,13 @@ class DetectionServer:
         """
         Is called whenever new odometry data arrives.
 
-        :param odom: odometry data to update robot pos with
+        :param odom: odometry data to update the robot pos with
         """
-        self.robot_pos = odom.twist.twist.linear
+        pose = PoseStamped()
+        pose.header.frame_id = odom.header.frame_id
+        pose.pose = odom.pose.pose
+        pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
+        self.robot_pos = pose_stamped.pose.position
 
 
 def get_theta_by_index(idx):
@@ -568,7 +575,10 @@ def node():
     """
     Node to detect the container entry in a laser scan.
     """
+    global TF_BUFFER
     rospy.init_node("detect_container")
+    TF_BUFFER = tf2_ros.Buffer()
+    tf2_ros.TransformListener(TF_BUFFER)
     server = DetectionServer()
     rospy.spin()
 
