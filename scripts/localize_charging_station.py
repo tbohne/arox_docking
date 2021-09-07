@@ -3,12 +3,16 @@ import math
 
 import actionlib
 import rospy
+import tf2_ros
 from arox_docking.msg import DetectAction, DetectGoal, LocalizeAction
 from arox_docking.msg import LocalizeResult
+from arox_docking.util import transform_pose
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav_msgs.msg import Odometry
 from tf.transformations import quaternion_from_euler
+
+TF_BUFFER = None
 
 
 class LocalizationServer:
@@ -19,22 +23,18 @@ class LocalizationServer:
     def __init__(self):
         self.server = actionlib.SimpleActionServer('localize_charging_station', LocalizeAction, self.execute, False)
         self.station_pub = rospy.Publisher("/publish_charging_station", Point, queue_size=1)
-        # subscribe to robot pose (ground truth)
-        self.pose_sub = rospy.Subscriber("/pose_ground_truth", Odometry, self.odom_callback, queue_size=1)
+        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
         self.robot_pos = None
         self.pose_sub = None
         self.server.start()
 
-    def execute(self, goal):
+    @staticmethod
+    def retrieve_corner_points():
         """
-        Executes the action server.
+        Retrieves the entry corners from the container detection action.
 
-        :param goal: goal to be performed (dummy atm)
+        :return: entry corners of the container
         """
-
-        # some position relative to the container would be good (not absolute on map)
-
-        # 1.) get entry corners (points A and B)
         client = actionlib.SimpleActionClient('detect_container', DetectAction)
         client.wait_for_server()
         goal = DetectGoal()
@@ -43,36 +43,50 @@ class LocalizationServer:
         res = client.get_result().corners
 
         corners = res[:2]
-        A = Point()
-        A.x = corners[0].x
-        A.y = corners[0].y
+        first_corner = Point()
+        first_corner.x = corners[0].x
+        first_corner.y = corners[0].y
+        second_corner = Point()
+        second_corner.x = corners[1].x
+        second_corner.y = corners[1].y
+        return first_corner, second_corner
 
-        B = Point()
-        B.x = corners[1].x
-        B.y = corners[1].y
+    def compute_external_pose(self, first_corner, second_corner):
+        """
+        Compute an external pose relative to the container.
 
-        goal = Point()
-        goal.x = (self.robot_pos.x + B.x) / 2
-        goal.y = (self.robot_pos.y + B.y) / 2
-
-        angle = math.atan2(A.y - B.y, A.x - B.x)
-
-        result = LocalizeResult()
+        :param first_corner: first corner of the container entry
+        :param second_corner: second corner of the container entry
+        :return: external pose
+        """
         pose = PoseStamped()
         pose.header.frame_id = "base_link"
         pose.header.stamp = rospy.Time.now()
-
-        pose.pose.position.x = goal.x
-        pose.pose.position.y = goal.y
+        pose.pose.position.x = (self.robot_pos.x + second_corner.x) / 5
+        pose.pose.position.y = (self.robot_pos.y + second_corner.y) / 5
+        angle = math.atan2(first_corner.y - second_corner.y, first_corner.x - second_corner.x)
         q = quaternion_from_euler(0, 0, angle)
         pose.pose.orientation = Quaternion(*q)
+        return pose
 
+    def execute(self, goal):
+        """
+        Executes the action server.
+
+        :param goal: goal to be performed (dummy atm)
+        """
+        first_corner, second_corner = self.retrieve_corner_points()
+
+        result = LocalizeResult()
+        pose = self.compute_external_pose(first_corner, second_corner)
+        result.station_pos = pose
+
+        # visualize result
         point = Point()
         point.x = pose.pose.position.x
         point.y = pose.pose.position.y
         self.station_pub.publish(point)
 
-        result.station_pos = pose
         self.server.set_succeeded(result)
 
     def odom_callback(self, odom):
@@ -81,14 +95,21 @@ class LocalizationServer:
 
         :param odom: odometry data to update robot pos with
         """
-        self.robot_pos = odom.twist.twist.linear
+        pose = PoseStamped()
+        pose.header.frame_id = odom.header.frame_id
+        pose.pose = odom.pose.pose
+        pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
+        self.robot_pos = pose_stamped.pose.position
 
 
 def node():
     """
     Node to detect the charging station inside of the mobile container.
     """
+    global TF_BUFFER
     rospy.init_node("localize_charging_station")
+    TF_BUFFER = tf2_ros.Buffer()
+    tf2_ros.TransformListener(TF_BUFFER)
     server = LocalizationServer()
     rospy.spin()
 
