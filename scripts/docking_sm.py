@@ -10,7 +10,7 @@ import tf2_ros
 from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON
 from arox_docking.msg import DockAction, DetectAction, DetectGoal, LocalizeGoal, LocalizeAction
 from arox_docking.util import dist, transform_pose, FAILURE, get_failure_msg, get_success_msg
-from geometry_msgs.msg import Point, PoseStamped, Quaternion
+from geometry_msgs.msg import Point, PoseStamped, Quaternion, Twist
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
 from tf.transformations import quaternion_from_euler
 
@@ -331,7 +331,7 @@ class LocalizeChargingStation(smach.State):
             userdata.localize_charging_station_output = pose
             return 'succeeded'
 
-        userdata.drive_into_container_output = get_failure_msg()
+        userdata.localize_charging_station_output = get_failure_msg()
         return 'aborted'
 
 
@@ -341,8 +341,24 @@ class AlignRobotToChargingStation(smach.State):
                              input_keys=['align_robot_to_charging_station_input'],
                              output_keys=['align_robot_to_charging_station_output'])
 
-    @staticmethod
-    def execute(userdata):
+        self.cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
+
+    def move_backwards_to_wall(self):
+        rospy.loginfo("moving backwards to wall..")
+        # move a bit backwards -> publish to /cmd_vel
+        twist = Twist()
+        twist.linear.x = -3.0
+        self.cmd_vel_pub.publish(twist)
+        rospy.sleep(1)
+        self.cmd_vel_pub.publish(twist)
+        rospy.sleep(1)
+        self.cmd_vel_pub.publish(twist)
+        rospy.sleep(1)
+        self.cmd_vel_pub.publish(twist)
+        rospy.sleep(1)
+        self.cmd_vel_pub.publish(twist)
+
+    def execute(self, userdata):
         rospy.loginfo('executing state ALIGN_ROBOT_TO_CHARGING_STATION')
 
         move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
@@ -363,6 +379,8 @@ class AlignRobotToChargingStation(smach.State):
         if move_base_client.get_result().outcome == FAILURE:
             rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
             return 'aborted'
+
+        self.move_backwards_to_wall()
         return 'succeeded'
 
 

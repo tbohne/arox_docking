@@ -62,8 +62,8 @@ class LocalizationServer:
         pose = PoseStamped()
         pose.header.frame_id = "base_link"
         pose.header.stamp = rospy.Time.now()
-        pose.pose.position.x = (self.robot_pos.x + second_corner.x) / 5
-        pose.pose.position.y = (self.robot_pos.y + second_corner.y) / 5
+        pose.pose.position.x = (self.robot_pos.x + second_corner.x + first_corner.x) / 3
+        pose.pose.position.y = (self.robot_pos.y + second_corner.y + first_corner.y) / 3
         angle = math.atan2(first_corner.y - second_corner.y, first_corner.x - second_corner.x)
         q = quaternion_from_euler(0, 0, angle)
         pose.pose.orientation = Quaternion(*q)
