@@ -6,8 +6,6 @@ import tf2_geometry_msgs
 import tf2_ros
 from arox_docking.msg import DockAction
 
-FAILURE = 50
-
 
 def get_failure_msg():
     """
