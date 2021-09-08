@@ -13,6 +13,7 @@ from arox_docking.util import transform_pose, dist, FAILURE, get_failure_msg, ge
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
 from nav_msgs.msg import Odometry
+from std_msgs.msg import String
 from tf.transformations import quaternion_from_euler
 
 TF_BUFFER = None
@@ -226,6 +227,7 @@ class DriveOutOfContainer(smach.State):
                              output_keys=['drive_out_of_container_output'])
 
         self.outdoor_pub = rospy.Publisher("/publish_outdoor", Point, queue_size=1)
+        self.clear_markers_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
     def drive_to(self, pos):
         """
@@ -262,8 +264,7 @@ class DriveOutOfContainer(smach.State):
 
             if self.drive_to(userdata.drive_out_of_container_input):
                 userdata.drive_out_of_container_output = get_success_msg()
-                # clear marker
-                self.outdoor_pub.publish(Point())
+                self.clear_markers_pub.publish("clearing")
                 return 'succeeded'
 
             userdata.drive_out_of_container_output = get_failure_msg()
