@@ -12,6 +12,7 @@ from arox_docking.msg import DockAction, DetectAction, DetectGoal, LocalizeGoal,
 from arox_docking.util import dist, transform_pose, FAILURE, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Twist
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
+from std_msgs.msg import String
 from tf.transformations import quaternion_from_euler
 
 TF_BUFFER = None
@@ -387,10 +388,11 @@ class AlignRobotToChargingStation(smach.State):
 class Dock(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'])
+        self.clear_markers_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
-    @staticmethod
-    def execute(userdata):
+    def execute(self, userdata):
         rospy.loginfo('executing state DOCK')
+        self.clear_markers_pub.publish("clearing")
         return 'succeeded'
 
 

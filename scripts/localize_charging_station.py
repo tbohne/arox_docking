@@ -22,7 +22,7 @@ class LocalizationServer:
 
     def __init__(self):
         self.server = actionlib.SimpleActionServer('localize_charging_station', LocalizeAction, self.execute, False)
-        self.station_pub = rospy.Publisher("/publish_charging_station", Point, queue_size=1)
+        self.station_pub = rospy.Publisher("/publish_charger", Point, queue_size=1)
         self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
         self.robot_pos = None
         self.pose_sub = None

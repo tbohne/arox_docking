@@ -21,11 +21,9 @@ class Visualizer:
         self.corner_sub = rospy.Subscriber("/publish_corners", PointArray, self.publish_corners, queue_size=1)
         self.center_sub = rospy.Subscriber("/publish_center", Point, self.publish_center_marker, queue_size=1)
         self.outdoor_sub = rospy.Subscriber("/publish_outdoor", Point, self.publish_outdoor_marker, queue_size=1)
-        self.entry_sub = rospy.Subscriber("/publish_entry", PoseStamped, self.publish_container_entry_arrow,
-                                          queue_size=1)
+        self.entry_sub = rospy.Subscriber("/publish_entry", PoseStamped, self.publish_entry, queue_size=1)
         self.dbg_sub = rospy.Subscriber("/publish_dbg", PointArray, self.publish_dgb_points, queue_size=1)
-        self.charging_station_sub = rospy.Subscriber("/publish_charging_station", Point, self.publish_charging_station,
-                                                     queue_size=1)
+        self.charging_station_sub = rospy.Subscriber("/publish_charger", Point, self.publish_charger, queue_size=1)
         self.clear_sub = rospy.Subscriber("/clear_markers", String, self.clear_markers, queue_size=1)
 
         self.line_marker = None
@@ -52,8 +50,8 @@ class Visualizer:
         self.line_marker.header.frame_id = "base_link"
         self.line_marker.ns = "hough"
         self.line_marker.id = 0
-        self.line_marker.action = self.line_marker.ADD
-        self.line_marker.type = self.line_marker.LINE_LIST
+        self.line_marker.action = Marker.ADD
+        self.line_marker.type = Marker.LINE_LIST
         self.line_marker.pose.orientation.w = 1.0
         self.line_marker.scale.x = 0.01
         self.line_marker.color.g = 1.0
@@ -78,8 +76,8 @@ class Visualizer:
         self.dbg_marker = Marker()
         self.dbg_marker.header.frame_id = "base_link"
         self.dbg_marker.id = 1
-        self.dbg_marker.type = self.dbg_marker.POINTS
-        self.dbg_marker.action = self.dbg_marker.ADD
+        self.dbg_marker.type = Marker.POINTS
+        self.dbg_marker.action = Marker.ADD
         self.dbg_marker.pose.orientation.w = 1
         self.dbg_marker.scale.x = self.dbg_marker.scale.y = self.dbg_marker.scale.z = 0.08
         self.dbg_marker.color.a = self.dbg_marker.color.b = self.dbg_marker.color.g = 1.0
@@ -103,8 +101,8 @@ class Visualizer:
         self.corner_marker = Marker()
         self.corner_marker.header.frame_id = "base_link"
         self.corner_marker.id = 1
-        self.corner_marker.type = self.corner_marker.POINTS
-        self.corner_marker.action = self.corner_marker.ADD
+        self.corner_marker.type = Marker.POINTS
+        self.corner_marker.action = Marker.ADD
         self.corner_marker.pose.orientation.w = 1
         self.corner_marker.scale.x = self.corner_marker.scale.y = self.corner_marker.scale.z = 0.4
         self.corner_marker.color.a = self.corner_marker.color.b = 1.0
@@ -125,8 +123,8 @@ class Visualizer:
         self.center_marker = Marker()
         self.center_marker.header.frame_id = "base_link"
         self.center_marker.id = 1
-        self.center_marker.type = self.center_marker.POINTS
-        self.center_marker.action = self.center_marker.ADD
+        self.center_marker.type = Marker.POINTS
+        self.center_marker.action = Marker.ADD
         self.center_marker.pose.orientation.w = 1
         self.center_marker.scale.x = self.center_marker.scale.y = self.center_marker.scale.z = 0.4
         self.center_marker.color.a = self.center_marker.color.g = self.center_marker.color.r = 1.0
@@ -137,7 +135,11 @@ class Visualizer:
 
         :param center: container center
         """
-        if center:
+        # empty point is used as indicator for deletion
+        if center.x == 0 and center.y == 0 and center.z == 0:
+            self.center_marker.action = Marker.DELETE
+        else:
+            self.center_marker.action = Marker.ADD
             self.center_marker.points = [center]
         self.center_pub.publish(self.center_marker)
 
@@ -148,21 +150,25 @@ class Visualizer:
         self.charging_maker = Marker()
         self.charging_maker.header.frame_id = "base_link"
         self.charging_maker.id = 1
-        self.charging_maker.type = self.charging_maker.POINTS
-        self.charging_maker.action = self.charging_maker.ADD
+        self.charging_maker.type = Marker.POINTS
+        self.charging_maker.action = Marker.ADD
         self.charging_maker.pose.orientation.w = 1
         self.charging_maker.scale.x = self.charging_maker.scale.y = self.charging_maker.scale.z = 0.4
         self.charging_maker.color.a = 1.0
         self.charging_maker.color.r = 0.33
         self.charging_maker.color.g = self.charging_maker.color.b = 1.0
 
-    def publish_charging_station(self, point):
+    def publish_charger(self, point):
         """
         Generates and publishes a marker for the charging station inside the container.
 
         :param point: coordinates of the charging station
         """
-        if point:
+        # empty point is used as indicator for deletion
+        if point.x == 0 and point.y == 0 and point.z == 0:
+            self.charging_maker.action = Marker.DELETE
+        else:
+            self.charging_maker.action = Marker.ADD
             self.charging_maker.points = [point]
         self.charging_station_pub.publish(self.charging_maker)
 
@@ -173,8 +179,8 @@ class Visualizer:
         self.outdoor_marker = Marker()
         self.outdoor_marker.header.frame_id = "base_link"
         self.outdoor_marker.id = 1
-        self.outdoor_marker.type = self.outdoor_marker.POINTS
-        self.outdoor_marker.action = self.outdoor_marker.ADD
+        self.outdoor_marker.type = Marker.POINTS
+        self.outdoor_marker.action = Marker.ADD
         self.outdoor_marker.pose.orientation.w = 1
         self.outdoor_marker.scale.x = self.outdoor_marker.scale.y = self.outdoor_marker.scale.z = 0.4
         self.outdoor_marker.color.a = 1.0
@@ -188,7 +194,11 @@ class Visualizer:
 
         :param outdoor: point in front of the container
         """
-        if outdoor:
+        # empty point is used as indicator for deletion
+        if outdoor.x == 0 and outdoor.y == 0 and outdoor.z == 0:
+            self.outdoor_marker.action = Marker.DELETE
+        else:
+            self.outdoor_marker.action = Marker.ADD
             self.outdoor_marker.points = [outdoor]
         self.outdoor_pub.publish(self.outdoor_marker)
 
@@ -209,13 +219,17 @@ class Visualizer:
         self.entry_marker.color.b = 1.0
         self.entry_marker.color.a = 1.0
 
-    def publish_container_entry_arrow(self, pose):
+    def publish_entry(self, pose):
         """
         Generates and publishes an arrow indicating the position and direction of the container entry.
 
         :param pose: position and orientation towards the container entry
         """
-        if pose:
+        # empty pose is used as indicator for deletion
+        if pose.pose.position.x == 0 and pose.pose.position.y == 0 and pose.pose.position.z == 0:
+            self.entry_marker.action = Marker.DELETE
+        else:
+            self.entry_marker.action = Marker.ADD
             self.entry_marker.pose.position = pose.pose.position
             self.entry_marker.pose.orientation = pose.pose.orientation
         self.entry_pub.publish(self.entry_marker)
@@ -228,9 +242,13 @@ class Visualizer:
         """
         lst = PointArray()
         lst.points = []
-        self.publish_corners(lst)
-        self.publish_dgb_points(lst)
         self.publish_detected_lines(lst)
+        self.publish_corners(lst)
+        self.publish_center_marker(Point())
+        self.publish_outdoor_marker(Point())
+        self.publish_entry(PoseStamped())
+        self.publish_dgb_points(lst)
+        self.publish_charger(Point())
 
 
 def node():
