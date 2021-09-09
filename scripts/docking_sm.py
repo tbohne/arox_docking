@@ -350,15 +350,10 @@ class AlignRobotToChargingStation(smach.State):
         # move a bit backwards -> publish to /cmd_vel
         twist = Twist()
         twist.linear.x = -3.0
-        self.cmd_vel_pub.publish(twist)
-        rospy.sleep(1)
-        self.cmd_vel_pub.publish(twist)
-        rospy.sleep(1)
-        self.cmd_vel_pub.publish(twist)
-        rospy.sleep(1)
-        self.cmd_vel_pub.publish(twist)
-        rospy.sleep(1)
-        self.cmd_vel_pub.publish(twist)
+        rate = rospy.Rate(4)
+        for _ in range(3):
+            self.cmd_vel_pub.publish(twist)
+            rate.sleep()
 
     def execute(self, userdata):
         rospy.loginfo('executing state ALIGN_ROBOT_TO_CHARGING_STATION')
