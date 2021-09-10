@@ -91,7 +91,7 @@ class DetectionServer:
         base_attempts = 0
         tested_base_lines = []
 
-        while hough_space.max() > dynamic_acc_thresh_based_on_dist and base_lines_tested < 10 and base_attempts < 50:
+        while hough_space.max() > dynamic_acc_thresh_based_on_dist and base_lines_tested < 100 and base_attempts < 500:
             # clear markers of previous detection run
             self.dbg_pub.publish([])
             self.line_pub.publish([])
@@ -137,8 +137,8 @@ class DetectionServer:
                 point_list = median_filter(np.array(points[(c, r)]))
                 theta = get_theta_by_index(r)
 
-                if line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius,
-                                                 dynamic_acc_thresh_based_on_dist):
+                if line_corresponds_to_already_detected_lines(point_list, theta_base, theta, avg_points, found_line_params, radius,
+                                                              dynamic_acc_thresh_based_on_dist):
                     self.dbg_pub.publish(point_list)
                     p1, p2 = compute_line_points(theta, radius)
                     self.line_pub.publish([p1, p2])
@@ -432,6 +432,7 @@ def already_tested_base_line(tested_base_lines, radius, theta):
     for r, t in tested_base_lines:
         diff_r = abs(abs(radius) - abs(r))
         diff_t = abs(abs(theta) - abs(t))
+        # TODO: check whether 10 * RAD actually makes sense
         if diff_r < config.DELTA_RADIUS * 10 and diff_t < 60:
             return True
     return False
@@ -471,24 +472,32 @@ def intersection(line1, line2):
     return x, y
 
 
-def line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, found_line_params, radius, acc_thresh):
+def line_corresponds_to_already_detected_lines(points, theta_base, theta, avg_points, detected, radius, acc_thresh):
     """
-    Determines whether the detected line corresponds to the base line in the sense that the combination
-    of the two satisfies the shape criteria of the container.
+    Determines whether the newly detected line corresponds to the previously detected lines in the sense that the
+     combination of them satisfies the shape criteria of the container.
 
-    :param point_list: points of the detected line
+    :param points: points of the detected line
     :param theta_base: theta value of the base line
     :param theta: theta value of the detected line
     :param avg_points: avg points representing previously detected lines
-    :param found_line_params: parameters of previously detected lines
+    :param detected: parameters of previously detected lines
     :param radius: radius value of the detected line
     :param acc_thresh: threshold for accumulator array (number of points on line)
-    :return: whether the detected line corresponds to the base line
+    :return: whether the newly detected line corresponds to the previously detected ones
     """
-    if len(point_list) <= acc_thresh or not detected_reasonable_line(point_list, theta_base, theta, avg_points):
+    if len(points) <= acc_thresh or not detected_reasonable_line(points, theta_base, theta, avg_points):
         return False
 
-    for r, t in found_line_params:
+    same_angle_lines = 0
+    for _, t in detected:
+        if abs(theta - t) <= 10:
+            same_angle_lines += 1
+    # already >= 2 lines with roughly the same angle -> not part of the container
+    if same_angle_lines >= 2:
+        return False
+
+    for r, t in detected:
         # "equal" radius -> angle has to be different
         # TODO: check whether 4 is appropriate
         if abs(abs(r) - abs(radius)) < config.DELTA_RADIUS * 4:
@@ -497,7 +506,7 @@ def line_corresponds_to_base_line(point_list, theta_base, theta, avg_points, fou
                 return False
 
     # check intersections
-    tmp = found_line_params.copy()
+    tmp = detected.copy()
     tmp.append((radius, theta))
     intersections = compute_intersection_points(tmp)
     for p in intersections:
