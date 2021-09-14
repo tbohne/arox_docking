@@ -7,12 +7,13 @@ import rospy
 import smach
 import smach_ros
 import tf2_ros
-from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, MBF_PAT_EXCEEDED
+from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, MBF_PAT_EXCEEDED, DETECTION_ATTEMPTS
 from arox_docking.msg import DockAction, DetectAction, DetectGoal, LocalizeGoal, LocalizeAction
 from arox_docking.util import dist, transform_pose, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Twist
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
 from std_msgs.msg import String
+from nav_msgs.msg import Odometry
 from tf.transformations import quaternion_from_euler
 
 TF_BUFFER = None
@@ -188,7 +189,21 @@ class DriveIntoContainer(smach.State):
                              input_keys=['drive_into_container_input'],
                              output_keys=['drive_into_container_output'])
 
+        self.robot_pose = None
+        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
         self.center_pub = rospy.Publisher("/publish_center", Point, queue_size=1)
+
+    def odom_callback(self, odom):
+        """
+        Is called whenever new odometry data arrives.
+
+        :param odom: odometry data to update robot pos with
+        """
+        pose = PoseStamped()
+        pose.header.frame_id = odom.header.frame_id
+        pose.pose = odom.pose.pose
+        pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
+        self.robot_pose = pose_stamped.pose
 
     def execute(self, userdata):
         """
@@ -199,11 +214,7 @@ class DriveIntoContainer(smach.State):
         """
         rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
 
-        # TODO: remove hard coded value
-        attempts = 5
-        cnt = 0
-        while cnt < attempts:
-            cnt += 1
+        for _ in range(DETECTION_ATTEMPTS):
             client = actionlib.SimpleActionClient('detect_container', DetectAction)
             client.wait_for_server()
             goal = DetectGoal()
@@ -218,9 +229,8 @@ class DriveIntoContainer(smach.State):
                 center = Point()
                 center.x = np.average([p.x for p in container_corners])
                 center.y = np.average([p.y for p in container_corners])
-                outdoor = self.determine_point_in_front_of_container(container_corners)
                 self.center_pub.publish(center)
-                angle = math.atan2(outdoor.y - center.y, outdoor.x - center.x)
+                angle = math.atan2(self.robot_pose.position.y - center.y, self.robot_pose.position.x - center.x)
                 center_res = self.compute_center(center, angle)
 
                 if center_res:
@@ -281,33 +291,6 @@ class DriveIntoContainer(smach.State):
         q = quaternion_from_euler(0, 0, angle)
         center.pose.orientation = Quaternion(*q)
         return center
-
-    @staticmethod
-    def determine_point_in_front_of_container(corners):
-        """
-        Computes a point in front of the container.
-
-        :param corners: detected corner points of the container
-        :return: outdoor point
-        """
-        base_point = Point()
-        for i in range(len(corners)):
-            for j in range(len(corners)):
-                if i != j:
-                    if CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(corners[i], corners[
-                        j]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON:
-                        base_point.x = (corners[i].x + corners[j].x) / 2
-                        base_point.y = (corners[i].y + corners[j].y) / 2
-                        direction_vector = (corners[j].x - corners[i].x, corners[j].y - corners[i].y)
-                        break
-
-        length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
-        res_vec = (direction_vector[0] / length, direction_vector[1] / length)
-        distance = CONTAINER_LENGTH * 1.5
-        outdoor = Point()
-        outdoor.x = base_point.x - res_vec[1] * distance
-        outdoor.y = base_point.y + res_vec[0] * distance
-        return outdoor
 
 
 class LocalizeChargingStation(smach.State):
