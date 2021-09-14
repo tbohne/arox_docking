@@ -7,7 +7,7 @@ import rospy
 import smach
 import smach_ros
 import tf2_ros
-from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE
+from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, DETECTION_ATTEMPTS
 from arox_docking.msg import DockAction, DetectAction, DetectGoal
 from arox_docking.util import transform_pose, dist, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
@@ -76,10 +76,7 @@ class DetectEntry(smach.State):
         """
         rospy.loginfo('executing state DETECT_ENTRY')
 
-        attempts = 5
-        cnt = 0
-        while cnt < attempts:
-            cnt += 1
+        for _ in range(DETECTION_ATTEMPTS):
             client = actionlib.SimpleActionClient('detect_container', DetectAction)
             client.wait_for_server()
             goal = DetectGoal()
@@ -93,6 +90,7 @@ class DetectEntry(smach.State):
                 if len(res) == 5:
                     rospy.loginfo("CONTAINER ENTRY DETECTED..")
                     container_corners = res[:2]
+                    continue
                 # detected whole container: 4 corners + 4 avg points
                 elif len(res) == 8:
                     rospy.loginfo("WHOLE CONTAINER DETECTED..")

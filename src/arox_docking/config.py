@@ -15,6 +15,7 @@ DELTA_RADIUS = 0.02
 # TODO: check sensor range
 RADIUS_MIN = -10.0
 RADIUS_MAX = 10.0
+DETECTION_ATTEMPTS = 10
 ###############################################################
 
 ####################### MBF ERROR CODES #######################

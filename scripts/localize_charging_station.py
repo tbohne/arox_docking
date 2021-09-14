@@ -42,6 +42,8 @@ class LocalizationServer:
         client.wait_for_result()
         res = client.get_result().corners
 
+        # TODO: possible to detect all 4 corners here, then it should be handled differently
+        #       -> low priority - not yet clear how to receive charging station pos
         corners = res[:2]
         first_corner = Point()
         first_corner.x = corners[0].x
