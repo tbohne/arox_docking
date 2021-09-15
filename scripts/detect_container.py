@@ -136,8 +136,18 @@ class DetectionServer:
             while len(found_line_params) < 4 and hough_copy.max() > dynamic_acc_thresh_based_on_dist:
                 c, r = retrieve_best_line(hough_copy)
                 radius = get_radius_by_index(c)
-                point_list = median_filter(np.array(points[(c, r)]))
                 theta = get_theta_by_index(r)
+                point_list = median_filter(np.array(points[(c, r)]))
+                dist_to_robot = dist(self.robot_pos, compute_avg_point(point_list)) if len(point_list) > 0 else 10
+                dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
+
+                # if we already found two lines, we are not that strict for the last two
+                # -> accept lines with fewer points if they correspond to the others
+                if len(found_line_params) >= 2:
+                    if 50 >= dynamic_acc_thresh_based_on_dist > 20:
+                        dynamic_acc_thresh_based_on_dist = 20
+                    elif 25 >= dynamic_acc_thresh_based_on_dist > 5:
+                        dynamic_acc_thresh_based_on_dist = 5
 
                 if line_corresponds_to_already_detected_lines(point_list, theta_base, theta, avg_points,
                                                               found_line_params, radius,
