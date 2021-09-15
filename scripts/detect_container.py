@@ -33,11 +33,9 @@ class DetectionServer:
         self.detecting = False
         self.robot_pos = None
 
-    def execute(self, goal):
+    def reset(self):
         """
-        Executes the action server.
-
-        :param goal: goal to be performed (dummy atm)
+        Resets detection related values and initializes publishers and subscribers.
         """
         # reset detected corners
         self.corners = None
@@ -45,7 +43,7 @@ class DetectionServer:
         # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
         self.scan_sub = rospy.Subscriber("/scanVelodyneFrame", LaserScan, self.scan_callback, queue_size=1,
                                          buff_size=2 ** 32)
-        # subscribe to robot pose (ground truth)
+        # subscribe to robot pose
         self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
 
         # publishers for debugging markers (visualizations)
@@ -54,28 +52,41 @@ class DetectionServer:
         self.dbg_pub = rospy.Publisher("/publish_dbg", PointArray, queue_size=1)
         self.clear_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
+    def execute(self, goal):
+        """
+        Executes the action server.
+
+        :param goal: goal to be performed (dummy atm)
+        """
+        self.reset()
         result = DetectResult()
 
-        # TODO: experiment with values / remove hard coded
-        attempts = 30
-        # give it some time to detect the container, but check after every 3s if it's done
-        for i in range(attempts):
+        # give it some time to detect the container, but check after every CHECK_FREQUENCY whether it's done
+        for i in range(int(config.TIME_LIMIT / config.CHECK_FREQUENCY)):
             if self.corners:
                 break
-            rospy.sleep(3)
+            rospy.sleep(config.CHECK_FREQUENCY)
 
         if self.corners:
-            rospy.loginfo("CORNER DETECTION SUCCEEDED!!")
+            rospy.loginfo("CORNER DETECTION SUCCEEDED..")
             self.scan_sub.unregister()
             self.pose_sub.unregister()
-            rospy.loginfo("RES: %s", self.corners)
             result.corners = self.corners
             self.server.set_succeeded(result)
         else:
-            rospy.loginfo("CORNER DETECTION FAILED!!")
+            rospy.loginfo("CORNER DETECTION FAILED..")
             self.scan_sub.unregister()
             self.pose_sub.unregister()
             self.server.set_preempted()
+
+    def line_dist_to_robot(self, point_list):
+        """
+        Computes the distance between the considered line (avg point) and the robot.
+
+        :param point_list: points of the considered line
+        :return: distance between line and robot
+        """
+        return dist(self.robot_pos, compute_avg_point(point_list)) if len(point_list) > 0 else config.DEF_DIST
 
     def detect_container(self, hough_space, points):
         """
@@ -86,8 +97,7 @@ class DetectionServer:
         """
         c, r = retrieve_best_line(hough_space)
         point_list = median_filter(np.array(points[(c, r)]))
-        dist_to_robot = dist(self.robot_pos, compute_avg_point(point_list)) if len(point_list) > 0 else 10
-        dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
+        dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(self.line_dist_to_robot(point_list))
 
         base_attempts = 0
         tested_base_lines = []
@@ -99,14 +109,11 @@ class DetectionServer:
             self.line_pub.publish([])
             self.corner_pub.publish([])
 
-            # rospy.loginfo("testing new base line with %s points", hough_space.max())
             # base line parameters
             c, r = retrieve_best_line(hough_space)
             point_list = median_filter(np.array(points[(c, r)]))
-            dist_to_robot = dist(self.robot_pos, compute_avg_point(point_list)) if len(point_list) > 0 else 10
-            rospy.loginfo("DIST TO ROBOT: %s", dist_to_robot)
+            dist_to_robot = self.line_dist_to_robot(point_list)
             dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
-            # rospy.loginfo("DIST TO ROBOT: %s, THRESH: %s", dist_to_robot, dynamic_acc_thresh_based_on_dist)
 
             theta_base = get_theta_by_index(r)
             radius = get_radius_by_index(c)
@@ -138,7 +145,7 @@ class DetectionServer:
                 radius = get_radius_by_index(c)
                 theta = get_theta_by_index(r)
                 point_list = median_filter(np.array(points[(c, r)]))
-                dist_to_robot = dist(self.robot_pos, compute_avg_point(point_list)) if len(point_list) > 0 else 10
+                dist_to_robot = self.line_dist_to_robot(point_list)
                 dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
 
                 # if we already found two lines, we are not that strict for the last two
