@@ -30,6 +30,7 @@ class DetectionServer:
         self.dbg_pub = None
         self.clear_pub = None
         self.corners = None
+        self.detecting = False
         self.robot_pos = None
 
     def execute(self, goal):
@@ -40,6 +41,7 @@ class DetectionServer:
         """
         # reset detected corners
         self.corners = None
+        self.detecting = False
         # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
         self.scan_sub = rospy.Subscriber("/scanVelodyneFrame", LaserScan, self.scan_callback, queue_size=1,
                                          buff_size=2 ** 32)
@@ -84,14 +86,14 @@ class DetectionServer:
         """
         c, r = retrieve_best_line(hough_space)
         point_list = median_filter(np.array(points[(c, r)]))
-        dist_to_robot = dist(self.robot_pos, point_list[0]) if len(point_list) > 0 else 10
+        dist_to_robot = dist(self.robot_pos, compute_avg_point(point_list)) if len(point_list) > 0 else 10
         dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
 
-        base_lines_tested = 0
         base_attempts = 0
         tested_base_lines = []
 
-        while hough_space.max() > dynamic_acc_thresh_based_on_dist and base_lines_tested < 100 and base_attempts < 500:
+        while hough_space.max() >= dynamic_acc_thresh_based_on_dist and len(
+                tested_base_lines) < config.BASE_TEST_LIMIT and base_attempts < config.BASE_ATTEMPT_LIMIT:
             # clear markers of previous detection run
             self.dbg_pub.publish([])
             self.line_pub.publish([])
@@ -101,8 +103,8 @@ class DetectionServer:
             # base line parameters
             c, r = retrieve_best_line(hough_space)
             point_list = median_filter(np.array(points[(c, r)]))
-
-            dist_to_robot = dist(self.robot_pos, point_list[0]) if len(point_list) > 0 else 10
+            dist_to_robot = dist(self.robot_pos, compute_avg_point(point_list)) if len(point_list) > 0 else 10
+            rospy.loginfo("DIST TO ROBOT: %s", dist_to_robot)
             dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
             # rospy.loginfo("DIST TO ROBOT: %s, THRESH: %s", dist_to_robot, dynamic_acc_thresh_based_on_dist)
 
@@ -114,7 +116,7 @@ class DetectionServer:
             if already_tested or len(point_list) <= dynamic_acc_thresh_based_on_dist or not reasonable_line:
                 hough_space[c][r] = 0
                 base_attempts += 1
-                # rospy.loginfo("base attempt: %s", base_attempts)
+                rospy.loginfo("base attempt: %s", base_attempts)
                 continue
 
             # visualize base line
@@ -127,7 +129,7 @@ class DetectionServer:
             update_avg_points(avg_points, point_list)
             hough_space[c][r] = 0
             hough_copy = hough_space.copy()
-            base_lines_tested += 1
+            rospy.loginfo("base lines tested: %s", len(tested_base_lines))
             tested_base_lines.append((radius, theta_base))
 
             # detect remaining 2-3 sides
@@ -137,7 +139,8 @@ class DetectionServer:
                 point_list = median_filter(np.array(points[(c, r)]))
                 theta = get_theta_by_index(r)
 
-                if line_corresponds_to_already_detected_lines(point_list, theta_base, theta, avg_points, found_line_params, radius,
+                if line_corresponds_to_already_detected_lines(point_list, theta_base, theta, avg_points,
+                                                              found_line_params, radius,
                                                               dynamic_acc_thresh_based_on_dist):
                     self.dbg_pub.publish(point_list)
                     p1, p2 = compute_line_points(theta, radius)
@@ -156,6 +159,8 @@ class DetectionServer:
                     for p in avg_points:
                         self.corners.append(p)
                 break
+        rospy.loginfo("STOPPING - HOUGH MAX: %s, ACC_THRESH: %s", hough_space.max(), dynamic_acc_thresh_based_on_dist)
+        self.detecting = False
 
     def scan_callback(self, scan):
         """
@@ -168,8 +173,10 @@ class DetectionServer:
         # rospy.loginfo("seq: %s", scan.header.seq)
 
         # only detecting container if it's not already detected
-        if self.corners is None:
-            theta_values = np.deg2rad(np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
+        if self.corners is None and not self.detecting:
+            self.detecting = True
+            theta_values = np.deg2rad(
+                np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
             r_values = np.arange(config.RADIUS_MIN, config.RADIUS_MAX, config.DELTA_RADIUS, dtype=np.double)
             # precompute sines and cosines
             cosines = np.cos(theta_values)
@@ -303,6 +310,19 @@ def median_filter(points_on_line):
     median.x = np.median(np.sort([p.x for p in points_on_line]))
     median.y = np.median(np.sort([p.y for p in points_on_line]))
     return [p for p in points_on_line if dist(p, median) <= config.CONTAINER_LENGTH]
+
+
+def compute_avg_point(point_list):
+    """
+    Computes the average of the specified list of points.
+
+    :param point_list: list of points to compute average for
+    :return: avg point
+    """
+    avg = Point()
+    avg.x = np.average([p.x for p in point_list])
+    avg.y = np.average([p.y for p in point_list])
+    return avg
 
 
 def compute_avg_and_max_distance(point_list):
@@ -550,13 +570,15 @@ def determine_thresh_based_on_dist_to_robot(dist_to_robot):
     :return: accumulator threshold
     """
     # TODO: to be refined based on experiments
-    if dist_to_robot < 2:
-        return 30
-    elif dist_to_robot < 3:
+    if dist_to_robot < 1:
+        return 50
+    elif dist_to_robot < 2:
         return 25
-    elif dist_to_robot < 4:
+    elif dist_to_robot < 3:
         return 20
-    elif dist_to_robot < 7:
+    elif dist_to_robot < 4:
+        return 15
+    elif dist_to_robot < 6:
         return 10
     else:
         return 5

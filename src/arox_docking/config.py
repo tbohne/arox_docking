@@ -16,6 +16,8 @@ DELTA_RADIUS = 0.02
 RADIUS_MIN = -10.0
 RADIUS_MAX = 10.0
 DETECTION_ATTEMPTS = 10
+BASE_TEST_LIMIT = 500
+BASE_ATTEMPT_LIMIT = 1000
 ###############################################################
 
 ####################### MBF ERROR CODES #######################
