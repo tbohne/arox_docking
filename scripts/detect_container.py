@@ -86,7 +86,7 @@ class DetectionServer:
         :param point_list: points of the considered line
         :return: distance between line and robot
         """
-        return dist(self.robot_pos, compute_avg_point(point_list)) if len(point_list) > 0 else config.DEF_DIST
+        return dist(self.robot_pos, compute_avg_point(point_list)) if len(point_list) > 0 else config.DEFAULT_DIST
 
     def detect_container(self, hough_space, points):
         """
@@ -117,7 +117,7 @@ class DetectionServer:
 
             theta_base = get_theta_by_index(r)
             radius = get_radius_by_index(c)
-            already_tested = already_tested_base_line(tested_base_lines, radius, theta_base)
+            already_tested = already_tested_line(tested_base_lines, radius, theta_base)
             reasonable_line = detected_reasonable_line(point_list, None, theta_base, [])
 
             if already_tested or len(point_list) <= dynamic_acc_thresh_based_on_dist or not reasonable_line:
@@ -139,26 +139,36 @@ class DetectionServer:
             rospy.loginfo("base lines tested: %s", len(tested_base_lines))
             tested_base_lines.append((radius, theta_base))
 
+            # TODO: potential problem: if something didn't work out as base line, it is set to 0 and not used at all
+            base_avg = compute_avg_point(point_list)
+            tested_lines = []
+
             # detect remaining 2-3 sides
             while len(found_line_params) < 4 and hough_copy.max() > dynamic_acc_thresh_based_on_dist:
                 c, r = retrieve_best_line(hough_copy)
                 radius = get_radius_by_index(c)
                 theta = get_theta_by_index(r)
                 point_list = median_filter(np.array(points[(c, r)]))
+                already_used = already_tested_line(found_line_params, radius, theta) or already_tested_line(tested_lines, radius, theta)
+                too_far_away = dist(compute_avg_point(point_list), base_avg) > config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON
+                tested_lines.append((radius, theta))
+
+                if already_used or too_far_away:
+                    hough_copy[c][r] = 0
+                    continue
+
                 dist_to_robot = self.line_dist_to_robot(point_list)
                 dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
 
                 # if we already found two lines, we are not that strict for the last two
                 # -> accept lines with fewer points if they correspond to the others
-                if len(found_line_params) >= 2:
-                    if 50 >= dynamic_acc_thresh_based_on_dist > 20:
-                        dynamic_acc_thresh_based_on_dist = 20
-                    elif 25 >= dynamic_acc_thresh_based_on_dist > 5:
-                        dynamic_acc_thresh_based_on_dist = 5
+                if len(found_line_params) >= 2 and dynamic_acc_thresh_based_on_dist > 10:
+                    dynamic_acc_thresh_based_on_dist = 10
 
                 if line_corresponds_to_already_detected_lines(point_list, theta_base, theta, avg_points,
                                                               found_line_params, radius,
                                                               dynamic_acc_thresh_based_on_dist):
+
                     self.dbg_pub.publish(point_list)
                     p1, p2 = compute_line_points(theta, radius)
                     self.line_pub.publish([p1, p2])
@@ -287,6 +297,7 @@ def retrieve_best_line(hough_space):
     :param hough_space: hough space to retrieve peak from
     :return: indices of peak in hough space
     """
+
     max_idx = hough_space.argmax()
     c, r = np.unravel_index(max_idx, hough_space.shape)
     assert hough_space.max() == hough_space[c][r]
@@ -370,7 +381,8 @@ def reasonable_dist_to_already_detected_lines(point_list, avg_points):
     avg.y = np.average([p.y for p in point_list])
     for p in avg_points:
         eps_length = config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON
-        if dist(avg, p) > eps_length or dist(avg, p) < config.CONTAINER_WIDTH / 2:
+        # TODO: the LB is quite dangerous here -> could lead to missed sides (but also kinda necessary)
+        if dist(avg, p) > eps_length or dist(avg, p) < config.CONTAINER_WIDTH / 3:
             return False
     return True
 
@@ -412,12 +424,13 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points):
     orthogonal_to_base = diff < 2 or 88 < diff < 92 or 178 < diff < 182 or 268 < diff < 272
     avg_dist, max_dist = compute_avg_and_max_distance(point_list)
     reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
-    tolerated_length = config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON * 2
+    tolerated_UB = config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON * 2
     # shouldn't be too restrictive at the lower bound (partially detected lines etc.)
-    reasonable_len = tolerated_length >= max_dist >= 0.5
+    tolerated_LB = 0.5
+    reasonable_len = tolerated_UB >= max_dist >= tolerated_LB
 
     # TODO: perhaps not so useful
-    reasonable_avg_distances = config.CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
+    reasonable_avg_distances = True#config.CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
     jumps = False  # detect_jumps(point_list)
 
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and not jumps
@@ -456,21 +469,20 @@ def update_avg_points(avg_points, point_list):
     avg_points.append(avg)
 
 
-def already_tested_base_line(tested_base_lines, radius, theta):
+def already_tested_line(tested_lines, radius, theta):
     """
-    Checks whether the line (or a very similar line) represented by radius and theta was
-    considered as base line for the container before.
+    Checks whether the line (or a very similar line) represented by radius and theta was considered before.
 
-    :param tested_base_lines: parameters of already tested base lines
+    :param tested_lines: parameters of already tested lines
     :param radius: radius value of currently considered line
     :param theta: theta value of currently considered line
-    :return: whether the line was already considered as base line
+    :return: whether the line was already considered
     """
-    for r, t in tested_base_lines:
+    for r, t in tested_lines:
         diff_r = abs(abs(radius) - abs(r))
         diff_t = abs(abs(theta) - abs(t))
         # TODO: check whether 10 * RAD actually makes sense
-        if diff_r < config.DELTA_RADIUS * 10 and diff_t < 60:
+        if diff_r < config.DELTA_RADIUS * 2 and diff_t < 80:
             return True
     return False
 
