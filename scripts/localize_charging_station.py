@@ -91,8 +91,8 @@ class LocalizationServer:
             point.y = pose.pose.position.y
             self.station_pub.publish(point)
             self.server.set_succeeded(result)
-
-        self.server.set_aborted()
+        else:
+            self.server.set_aborted()
 
     def odom_callback(self, odom):
         """
