@@ -22,6 +22,7 @@ DETECTION_ATTEMPTS = 10
 BASE_TEST_LIMIT = 500
 BASE_ATTEMPT_LIMIT = 1000
 DEFAULT_DIST = 10  # in meters
+LINE_LB = 5  # lower bound of points forming a line
 ###############################################################
 
 ####################### MBF ERROR CODES #######################

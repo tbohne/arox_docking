@@ -102,7 +102,7 @@ class DetectionServer:
         base_attempts = 0
         tested_base_lines = []
 
-        while hough_space.max() >= dynamic_acc_thresh_based_on_dist and len(
+        while hough_space.max() >= config.LINE_LB and len(
                 tested_base_lines) < config.BASE_TEST_LIMIT and base_attempts < config.BASE_ATTEMPT_LIMIT:
             # clear markers of previous detection run
             self.dbg_pub.publish([])
@@ -149,8 +149,10 @@ class DetectionServer:
                 radius = get_radius_by_index(c)
                 theta = get_theta_by_index(r)
                 point_list = median_filter(np.array(points[(c, r)]))
-                already_used = already_tested_line(found_line_params, radius, theta) or already_tested_line(tested_lines, radius, theta)
-                too_far_away = dist(compute_avg_point(point_list), base_avg) > config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON
+                already_used = already_tested_line(found_line_params, radius, theta) or already_tested_line(
+                    tested_lines, radius, theta)
+                too_far_away = dist(compute_avg_point(point_list),
+                                    base_avg) > config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON
                 tested_lines.append((radius, theta))
 
                 if already_used or too_far_away:
@@ -165,10 +167,10 @@ class DetectionServer:
                 if len(found_line_params) >= 2 and dynamic_acc_thresh_based_on_dist > 10:
                     dynamic_acc_thresh_based_on_dist = 10
 
-                if line_corresponds_to_already_detected_lines(point_list, theta_base, theta, avg_points,
-                                                              found_line_params, radius,
-                                                              dynamic_acc_thresh_based_on_dist):
+                infeasible_line = len(point_list) <= dynamic_acc_thresh_based_on_dist or not detected_reasonable_line(
+                    point_list, theta_base, theta, avg_points)
 
+                if not infeasible_line and line_corresponds_to_already_detected_lines(theta, found_line_params, radius):
                     self.dbg_pub.publish(point_list)
                     p1, p2 = compute_line_points(theta, radius)
                     self.line_pub.publish([p1, p2])
@@ -430,7 +432,7 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points):
     reasonable_len = tolerated_UB >= max_dist >= tolerated_LB
 
     # TODO: perhaps not so useful
-    reasonable_avg_distances = True#config.CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
+    reasonable_avg_distances = True  # config.CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
     jumps = False  # detect_jumps(point_list)
 
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and not jumps
@@ -521,23 +523,44 @@ def intersection(line1, line2):
     return x, y
 
 
-def line_corresponds_to_already_detected_lines(points, theta_base, theta, avg_points, detected, radius, acc_thresh):
+def feasible_distances(detected, theta, radius):
     """
-    Determines whether the newly detected line corresponds to the previously detected lines in the sense that the
-     combination of them satisfies the shape criteria of the container.
+    Measures the distances between the newly detected line and the previously detected ones parallel to the new one
+    and determines feasibility based on the polar coordinate distances.
 
-    :param points: points of the detected line
-    :param theta_base: theta value of the base line
-    :param theta: theta value of the detected line
-    :param avg_points: avg points representing previously detected lines
     :param detected: parameters of previously detected lines
+    :param theta: theta value of the detected line
     :param radius: radius value of the detected line
-    :param acc_thresh: threshold for accumulator array (number of points on line)
-    :return: whether the newly detected line corresponds to the previously detected ones
+    :return: whether the newly detected line corresponds to the others
     """
-    if len(points) <= acc_thresh or not detected_reasonable_line(points, theta_base, theta, avg_points):
-        return False
+    for r, t in detected:
+        # parallel to an already detected line (parallel lines have the same angle)
+        if t == theta:
+            already_detected = Point()
+            already_detected.x = r * np.cos(t)
+            already_detected.y = r * np.sin(t)
 
+            new = Point()
+            new.x = radius * np.cos(theta)
+            new.y = radius * np.sin(theta)
+
+            d = dist(already_detected, new)
+
+            if d < (config.CONTAINER_WIDTH - config.CONTAINER_WIDTH * config.EPSILON) or d > (
+                    config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON):
+                return False
+    return True
+
+
+def feasible_angles(detected, theta):
+    """
+    There can only be two lines with roughly the same angle belonging to the container. This fact is used in order
+    to determine whether the newly considered line could still be part of the container.
+
+    :param detected: parameters of previously detected lines
+    :param theta: theta value of the detected line
+    :return: whether the newly detected line could still be part of the container
+    """
     same_angle_lines = 0
     for _, t in detected:
         if abs(theta - t) <= 10:
@@ -545,7 +568,18 @@ def line_corresponds_to_already_detected_lines(points, theta_base, theta, avg_po
     # already >= 2 lines with roughly the same angle -> not part of the container
     if same_angle_lines >= 2:
         return False
+    return True
 
+
+def feasible_orientation(detected, radius, theta):
+    """
+    Determines whether the newly detected line has a feasible orientation towards the previously detected ones.
+
+    :param detected: parameters of previously detected lines
+    :param radius: radius value of the detected line
+    :param theta: theta value of the detected line
+    :return: whether the newly detected line has a feasible orientation
+    """
     for r, t in detected:
         # "equal" radius -> angle has to be different
         # TODO: check whether 4 is appropriate
@@ -553,8 +587,18 @@ def line_corresponds_to_already_detected_lines(points, theta_base, theta, avg_po
             # angle too close -> no container side
             if abs(theta - t) < 60 or 120 < abs(theta - t) < 240:
                 return False
+    return True
 
-    # check intersections
+
+def feasible_intersections(detected, radius, theta):
+    """
+    Determines whether the newly detected line has feasible intersections with the previously detected ones.
+
+    :param detected: parameters of previously detected lines
+    :param radius: radius value of the detected line
+    :param theta: theta value of the detected line
+    :return: whether the newly detected line has feasible intersections with the previous ones
+    """
     tmp = detected.copy()
     tmp.append((radius, theta))
     intersections = compute_intersection_points(tmp)
@@ -570,6 +614,20 @@ def line_corresponds_to_already_detected_lines(points, theta_base, theta, avg_po
                 if not tolerated_width and not tolerated_length:
                     return False
     return True
+
+
+def line_corresponds_to_already_detected_lines(theta, detected, radius):
+    """
+    Determines whether the newly detected line corresponds to the previously detected lines in the sense that the
+    combination of them satisfies the shape criteria of the container.
+
+    :param theta: theta value of the detected line
+    :param detected: parameters of previously detected lines
+    :param radius: radius value of the detected line
+    :return: whether the newly detected line corresponds to the previously detected ones
+    """
+    return feasible_distances(detected, theta, radius) and feasible_angles(detected, theta) and feasible_orientation(
+        detected, radius, theta) and feasible_intersections(detected, radius, theta)
 
 
 def retrieve_container_corners(found_line_params):
