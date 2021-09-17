@@ -77,7 +77,7 @@ class DetectionServer:
             rospy.loginfo("CORNER DETECTION FAILED..")
             self.scan_sub.unregister()
             self.pose_sub.unregister()
-            self.server.set_preempted()
+            self.server.set_aborted()
 
     def line_dist_to_robot(self, point_list):
         """

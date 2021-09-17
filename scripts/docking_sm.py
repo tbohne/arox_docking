@@ -310,14 +310,15 @@ class LocalizeChargingStation(smach.State):
         client.wait_for_result()
         res = client.get_result().station_pos
 
-        if res:
-            rospy.loginfo("DETECTED CHARGING STATION: %s", res)
-            pose = transform_pose(TF_BUFFER, res, 'map')
-            userdata.localize_charging_station_output = pose
-            return 'succeeded'
+        # empty res
+        if res.pose.position.x == 0 and res.pose.position.y == 0 and res.pose.position.z == 0:
+            userdata.localize_charging_station_output = get_failure_msg()
+            return 'aborted'
 
-        userdata.localize_charging_station_output = get_failure_msg()
-        return 'aborted'
+        rospy.loginfo("DETECTED CHARGING STATION: %s", res)
+        pose = transform_pose(TF_BUFFER, res, 'map')
+        userdata.localize_charging_station_output = pose
+        return 'succeeded'
 
 
 class AlignRobotToChargingStation(smach.State):

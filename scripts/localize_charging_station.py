@@ -42,16 +42,17 @@ class LocalizationServer:
         client.wait_for_result()
         res = client.get_result().corners
 
-        # TODO: possible to detect all 4 corners here, then it should be handled differently
-        #       -> low priority - not yet clear how to receive charging station pos
-        corners = res[:2]
-        first_corner = Point()
-        first_corner.x = corners[0].x
-        first_corner.y = corners[0].y
-        second_corner = Point()
-        second_corner.x = corners[1].x
-        second_corner.y = corners[1].y
-        return first_corner, second_corner
+        if len(res) >= 2:
+            # TODO: possible to detect all 4 corners here, then it should be handled differently
+            #       -> low priority - not yet clear how to receive charging station pos
+            corners = res[:2]
+            first_corner = Point()
+            first_corner.x = corners[0].x
+            first_corner.y = corners[0].y
+            second_corner = Point()
+            second_corner.x = corners[1].x
+            second_corner.y = corners[1].y
+            return first_corner, second_corner
 
     def compute_external_pose(self, first_corner, second_corner):
         """
@@ -77,19 +78,21 @@ class LocalizationServer:
 
         :param goal: goal to be performed (dummy atm)
         """
-        first_corner, second_corner = self.retrieve_corner_points()
+        res = self.retrieve_corner_points()
+        if res:
+            first_corner, second_corner = res
+            result = LocalizeResult()
+            pose = self.compute_external_pose(first_corner, second_corner)
+            result.station_pos = pose
 
-        result = LocalizeResult()
-        pose = self.compute_external_pose(first_corner, second_corner)
-        result.station_pos = pose
+            # visualize result
+            point = Point()
+            point.x = pose.pose.position.x
+            point.y = pose.pose.position.y
+            self.station_pub.publish(point)
+            self.server.set_succeeded(result)
 
-        # visualize result
-        point = Point()
-        point.x = pose.pose.position.x
-        point.y = pose.pose.position.y
-        self.station_pub.publish(point)
-
-        self.server.set_succeeded(result)
+        self.server.set_aborted()
 
     def odom_callback(self, odom):
         """
