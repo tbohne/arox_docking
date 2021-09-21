@@ -421,7 +421,7 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points):
     :return: whether the detected line is a plausible container side
     """
     diff = 90 if theta_base is None else abs(theta - theta_base)
-    # should be either ~90° or ~270° if base is entry
+    # should be either ~90 or ~270 if base is entry
     # (base is not necessarily the entry of the container -> ~0 and ~180 ok as well)
     orthogonal_to_base = diff < 2 or 88 < diff < 92 or 178 < diff < 182 or 268 < diff < 272
     avg_dist, max_dist = compute_avg_and_max_distance(point_list)
