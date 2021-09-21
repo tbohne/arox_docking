@@ -41,8 +41,7 @@ class DetectionServer:
         self.corners = None
         self.detecting = False
         # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
-        self.scan_sub = rospy.Subscriber("/scanVelodyneFrame", LaserScan, self.scan_callback, queue_size=1,
-                                         buff_size=2 ** 32)
+        self.scan_sub = rospy.Subscriber("/scanVelodyneFrame", LaserScan, self.scan_callback, queue_size=1)
         # subscribe to robot pose
         self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
 
@@ -135,7 +134,7 @@ class DetectionServer:
             avg_points = []
             update_avg_points(avg_points, point_list)
             hough_space[c][r] = 0
-            hough_copy = hough_space.copy()
+            hough_copy = np.copy(hough_space)
             rospy.loginfo("base lines tested: %s", len(tested_base_lines))
             tested_base_lines.append((radius, theta_base))
 
@@ -599,7 +598,7 @@ def feasible_intersections(detected, radius, theta):
     :param theta: theta value of the detected line
     :return: whether the newly detected line has feasible intersections with the previous ones
     """
-    tmp = detected.copy()
+    tmp = list(detected)
     tmp.append((radius, theta))
     intersections = compute_intersection_points(tmp)
     for p in intersections:
