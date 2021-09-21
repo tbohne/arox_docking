@@ -162,9 +162,9 @@ class DetectionServer:
                 dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
 
                 # if we already found two lines, we are not that strict for the last two
-                # -> accept lines with fewer points if they correspond to the others
-                if len(found_line_params) >= 2 and dynamic_acc_thresh_based_on_dist > 10:
-                    dynamic_acc_thresh_based_on_dist = 10
+                # -> accept lines with fewer points (LB) if they correspond to the others
+                if len(found_line_params) >= 2 and dynamic_acc_thresh_based_on_dist > config.LINE_LB:
+                    dynamic_acc_thresh_based_on_dist = config.LINE_LB
 
                 infeasible_line = len(point_list) <= dynamic_acc_thresh_based_on_dist or not detected_reasonable_line(
                     point_list, theta_base, theta, avg_points)
