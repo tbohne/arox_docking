@@ -9,13 +9,13 @@ from visualization_msgs.msg import Marker
 class Visualizer:
 
     def __init__(self):
-        self.hough_line_pub = rospy.Publisher("/hough_lines", Marker, queue_size=1)
-        self.corner_pub = rospy.Publisher("/corner_points", Marker, queue_size=1)
-        self.center_pub = rospy.Publisher("/center_point", Marker, queue_size=1)
-        self.outdoor_pub = rospy.Publisher("/outdoor_marker", Marker, queue_size=1)
-        self.entry_pub = rospy.Publisher("/entry_point", Marker, queue_size=1)
-        self.dbg_pub = rospy.Publisher("/dbg_points", Marker, queue_size=1)
-        self.charging_station_pub = rospy.Publisher("/charging_station", Marker, queue_size=1)
+        self.hough_line_pub = rospy.Publisher("/docking/hough_lines", Marker, queue_size=1)
+        self.corner_pub = rospy.Publisher("/docking/corner_points", Marker, queue_size=1)
+        self.center_pub = rospy.Publisher("/docking/center_point", Marker, queue_size=1)
+        self.outdoor_pub = rospy.Publisher("/docking/outdoor_marker", Marker, queue_size=1)
+        self.entry_pub = rospy.Publisher("/docking/entry_point", Marker, queue_size=1)
+        self.dbg_pub = rospy.Publisher("/docking/dbg_points", Marker, queue_size=1)
+        self.charging_station_pub = rospy.Publisher("/docking/charging_station", Marker, queue_size=1)
 
         self.line_sub = rospy.Subscriber("/publish_lines", PointArray, self.publish_detected_lines, queue_size=1)
         self.corner_sub = rospy.Subscriber("/publish_corners", PointArray, self.publish_corners, queue_size=1)
