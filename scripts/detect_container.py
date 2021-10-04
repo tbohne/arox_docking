@@ -488,7 +488,7 @@ def already_tested_line(tested_lines, radius, theta):
         diff_r = abs(abs(radius) - abs(r))
         diff_t = abs(abs(theta) - abs(t))
         # TODO: check whether 10 * RAD actually makes sense
-        if diff_r < config.DELTA_RADIUS * 2 and diff_t < 80:
+        if diff_r < config.DELTA_RADIUS_CHECK * 2 and diff_t < 80:
             return True
     return False
 
@@ -587,7 +587,7 @@ def feasible_orientation(detected, radius, theta):
     for r, t in detected:
         # "equal" radius -> angle has to be different
         # TODO: check whether 4 is appropriate
-        if abs(abs(r) - abs(radius)) < config.DELTA_RADIUS * 4:
+        if abs(abs(r) - abs(radius)) < config.DELTA_RADIUS_CHECK * 4:
             # angle too close -> no container side
             if abs(theta - t) < 60 or 120 < abs(theta - t) < 240:
                 return False
