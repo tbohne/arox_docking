@@ -343,7 +343,17 @@ def median_filter(points_on_line):
     median = Point()
     median.x = np.median(np.sort([p.x for p in points_on_line]))
     median.y = np.median(np.sort([p.y for p in points_on_line]))
-    return [p for p in points_on_line if dist(p, median) <= config.CONTAINER_LENGTH]
+    res = [p for p in points_on_line if dist(p, median) <= config.CONTAINER_LENGTH]
+    if len(res) > 300:
+        filtered = []
+        size = 5
+        for i in range(size, len(res), size):
+            avg = Point()
+            avg.x = np.average(np.sort([res[j].x for j in range(i - size, i)]))
+            avg.y = np.average(np.sort([res[j].y for j in range(i - size, i)]))
+            filtered.append(avg)
+        res = filtered
+    return res
 
 
 def compute_avg_point(point_list):
