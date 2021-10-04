@@ -27,3 +27,14 @@
 - **Schritt 6: Docking an Ladestation**
     - *Vorbedingung*: Roboter an Ladestation ausgerichtet
     - *Nachbedingung*: Roboter lädt
+
+# Compatible Branches
+
+## within docker container
+- `arox_navigation_flex`: `low_yaw_goal_tolerance`
+- `arox_launch`: `frame_launch`
+- `arox_indoor_navi`: `sim_launch_detection_config`
+
+## out of docker container
+- `container_description`: `feature_simple_collisions`
+- `arox_description`: `feature_flying_sick_tim`
