@@ -131,6 +131,8 @@ class DetectionServer:
             self.line_pub.publish([p1, p2])
 
             found_line_params = [(radius, theta_base)]
+            _, length = compute_avg_and_max_distance(point_list)
+            line_lengths = [length]
             avg_points = []
             update_avg_points(avg_points, point_list)
             hough_space[c][r] = 0
@@ -170,11 +172,14 @@ class DetectionServer:
                     point_list, theta_base, theta, avg_points)
 
                 if not infeasible_line and line_corresponds_to_already_detected_lines(theta, found_line_params, radius):
-                    self.dbg_pub.publish(point_list)
-                    p1, p2 = compute_line_points(theta, radius)
-                    self.line_pub.publish([p1, p2])
-                    found_line_params.append((radius, theta))
-                    update_avg_points(avg_points, point_list)
+                    _, length = compute_avg_and_max_distance(point_list)
+                    if feasible_line_length(line_lengths, length):
+                        self.dbg_pub.publish(point_list)
+                        p1, p2 = compute_line_points(theta, radius)
+                        self.line_pub.publish([p1, p2])
+                        found_line_params.append((radius, theta))
+                        line_lengths.append(length)
+                        update_avg_points(avg_points, point_list)
                 hough_copy[c][r] = 0
 
             # at least two corners found
@@ -612,6 +617,40 @@ def feasible_intersections(detected, radius, theta):
                 tolerated_length = config.CONTAINER_LENGTH - length_eps < d < config.CONTAINER_LENGTH + length_eps * 2
                 if not tolerated_width and not tolerated_length:
                     return False
+    return True
+
+
+def feasible_line_length(line_lengths, curr_length):
+    """
+    Determines whether the length of the currently considered container side candidate corresponds to
+    the already detected ones (i.e. for each side, CONTAINER_LENGTH and CONTAINER_WIDTH, we only allow 2)
+
+    :param line_lengths: lengths of already detected lines
+    :param curr_length: length of currently considered line candidate
+    :return: whether length of currently considered line feasibly corresponds to already detected lines
+    """
+    length_eps = config.CONTAINER_LENGTH * config.EPSILON
+    # width epsilon at upper bound should be very low because of partially detected long sides
+    width_eps = config.CONTAINER_WIDTH * 0.05
+    # can't be too strict here due to partially detected lines
+    if 0.5 < curr_length < config.CONTAINER_WIDTH + width_eps:
+        # check whether we have at most one short side detected yet
+        cnt = 0
+        for length in line_lengths:
+            if 0.5 < length < config.CONTAINER_WIDTH + width_eps:
+                cnt += 1
+        if cnt > 1:
+            return False
+    elif config.CONTAINER_WIDTH + width_eps < curr_length < config.CONTAINER_LENGTH + length_eps * 2:
+        # check whether we have at most one long side detected yet
+        cnt = 0
+        for length in line_lengths:
+            if config.CONTAINER_WIDTH + width_eps < length < config.CONTAINER_LENGTH + length_eps * 2:
+                cnt += 1
+        if cnt > 1:
+            return False
+    else:
+        return False
     return True
 
 
