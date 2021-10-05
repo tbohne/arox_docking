@@ -349,8 +349,8 @@ def median_filter(points_on_line):
         size = 5
         for i in range(size, len(res), size):
             avg = Point()
-            avg.x = np.average(np.sort([res[j].x for j in range(i - size, i)]))
-            avg.y = np.average(np.sort([res[j].y for j in range(i - size, i)]))
+            avg.x = np.average([res[j].x for j in range(i - size, i)])
+            avg.y = np.average([res[j].y for j in range(i - size, i)])
             filtered.append(avg)
         res = filtered
     return res
