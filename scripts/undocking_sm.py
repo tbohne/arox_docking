@@ -90,7 +90,6 @@ class DetectEntry(smach.State):
                 if len(res) == 5:
                     rospy.loginfo("CONTAINER ENTRY DETECTED..")
                     container_corners = res[:2]
-                    continue
                 # detected whole container: 4 corners + 4 avg points
                 elif len(res) == 8:
                     rospy.loginfo("WHOLE CONTAINER DETECTED..")
@@ -121,9 +120,11 @@ class DetectEntry(smach.State):
         else:
             return first_corner.x - second_corner.x, first_corner.y - second_corner.y
 
-    @staticmethod
-    def determine_external_point(base_point, res_vec, corners, front_corner_indices):
+    def determine_external_point(self, base_point, res_vec, corners, front_corner_indices):
         distance = CONTAINER_LENGTH
+        if len(corners) == 2:
+            # compensate center point distance
+            distance += CONTAINER_LENGTH / 2
         # consider both candidates and take the one that is farther away from the backside corners
         outdoor_candidate_one = Point()
         outdoor_candidate_one.x = base_point.x + res_vec[1] * distance
@@ -132,15 +133,20 @@ class DetectEntry(smach.State):
         outdoor_candidate_two.x = base_point.x + (res_vec[1] * -1) * distance
         outdoor_candidate_two.y = base_point.y - (res_vec[0] * -1) * distance
 
-        check_corner = None
-        for i in range(len(corners)):
-            if i not in front_corner_indices:
-                check_corner = corners[i]
-                break
+        if len(corners) > 2:
+            check_corner = None
+            for i in range(len(corners)):
+                if i not in front_corner_indices:
+                    check_corner = corners[i]
+                    break
+            if dist(outdoor_candidate_one, check_corner) > dist(outdoor_candidate_two, check_corner):
+                return outdoor_candidate_one
+            return outdoor_candidate_two
 
-        if dist(outdoor_candidate_one, check_corner) > dist(outdoor_candidate_two, check_corner):
-            return outdoor_candidate_one
-        return outdoor_candidate_two
+        else:
+            if dist(self.robot_pose.position, outdoor_candidate_one) < dist(self.robot_pose.position, outdoor_candidate_two):
+                return outdoor_candidate_one
+            return outdoor_candidate_two
 
     def determine_point_in_front_of_container(self, corners):
         """
@@ -189,11 +195,14 @@ class DetectEntry(smach.State):
         elif len(corners) == 2:
             # TODO
             rospy.loginfo("ONLY ENTRY DETECTED -- TO BE IMPLEMENTED")
-            # actually it might be a valid assumption to be able to detect all 4 corners from within
-            # -> implement failure here
+            base_point = Point()
+            base_point.x = (corners[0].x + corners[1].x) / 2
+            base_point.y = (corners[0].y + corners[1].y) / 2
+            direction_vector = self.compute_direction_vector(corners[0], corners[1])
+            front_corner_indices = [0, 1]
 
-        # both (front and back) should be considered
-        assert detected_entries == 2
+        # # both (front and back) should be considered
+        # assert detected_entries == 2
         length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
         res_vec = (direction_vector[0] / length, direction_vector[1] / length)
         return self.determine_external_point(base_point, res_vec, corners, front_corner_indices)
