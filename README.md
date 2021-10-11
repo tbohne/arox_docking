@@ -57,6 +57,8 @@
 - run AROX controllers: `roslaunch arox_description run_controllers.launch`
 - run docker container named 'arox_docking': `aroxstartdocker arox_docking` (alias)
     - launch outdoor simulation: `roslaunch arox_launch arox_sim_outdoor.launch`
+- provide docking / undocking actions: `roslauch arox_docking docking.launch`
+- start dummy docking / undocking procedure: `rosrun arox_docking start_smach`
 
 ## Plan Executor (within docker container)
 
