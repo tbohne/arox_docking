@@ -7,7 +7,8 @@ import rospy
 import smach
 import smach_ros
 import tf2_ros
-from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, MBF_PAT_EXCEEDED, DETECTION_ATTEMPTS
+from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, MBF_PAT_EXCEEDED, \
+    DETECTION_ATTEMPTS
 from arox_docking.msg import DockAction, DetectAction, DetectGoal, LocalizeGoal, LocalizeAction
 from arox_docking.util import dist, transform_pose, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Twist
@@ -51,6 +52,20 @@ class DetectContainer(smach.State):
                              output_keys=['detect_container_output'])
 
         self.entry_pub = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
+        self.robot_pose = None
+        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
+
+    def odom_callback(self, odom):
+        """
+        Is called whenever new odometry data arrives.
+
+        :param odom: odometry data to update robot pos with
+        """
+        pose = PoseStamped()
+        pose.header.frame_id = odom.header.frame_id
+        pose.pose = odom.pose.pose
+        pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
+        self.robot_pose = pose_stamped.pose
 
     def execute(self, userdata):
         """
@@ -78,8 +93,7 @@ class DetectContainer(smach.State):
             return 'succeeded'
         return 'aborted'
 
-    @staticmethod
-    def determine_container_entry(points):
+    def determine_container_entry(self, points):
         """
         Determines the container entry based on the detected corners and the average line points.
 
@@ -89,16 +103,34 @@ class DetectContainer(smach.State):
         # TODO: check whether that's correct
         corners = points[:int(len(points) / 2)]
         avg_points = points[int(len(points) / 2):]
+        distance = 3.5
+        first = sec = None
+
+        if len(corners) == 2:
+            first, sec = corners
+        elif len(corners) == 4:
+            first = corners[0]
+            curr_min = dist(self.robot_pose.position, first)
+            # compute closest corner to robot pos
+            for i in range(1, len(corners)):
+                d = dist(self.robot_pose.position, corners[i])
+                if d < curr_min:
+                    first = corners[i]
+                    curr_min = d
+            # has to be a short side
+            for i in range(0, len(corners)):
+                if corners[i] != first and (CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= dist(first, corners[
+                    i]) >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON):
+                    sec = corners[i]
+                    break
 
         base_point = Point()
-        base_point.x = (corners[0].x + corners[1].x) / 2
-        base_point.y = (corners[0].y + corners[1].y) / 2
+        base_point.x = (first.x + sec.x) / 2
+        base_point.y = (first.y + sec.y) / 2
 
-        direction_vector = (corners[1].x - corners[0].x, corners[1].y - corners[0].y)
+        direction_vector = (sec.x - first.x, sec.y - first.y)
         length = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
         res_vec = (direction_vector[0] / length, direction_vector[1] / length)
-
-        distance = 2.5
         entry_candidate_one = Point()
         entry_candidate_one.x = base_point.x - res_vec[1] * distance
         entry_candidate_one.y = base_point.y + res_vec[0] * distance
