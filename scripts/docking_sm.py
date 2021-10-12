@@ -237,6 +237,39 @@ class DriveIntoContainer(smach.State):
         pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
         self.robot_pose = pose_stamped.pose
 
+    def compute_entry_from_four_corners(self, container_corners):
+        """
+        Computes the entry corners based on the four detected corners and the robot's position.
+
+        :param container_corners: four detected corners of the container
+        :return: entry corners
+        """
+        # find the closest corner
+        first = container_corners[0]
+        curr_min = dist(self.robot_pose.position, first)
+        for i in range(1, len(container_corners)):
+            d = dist(container_corners[i], self.robot_pose.position)
+            if d < curr_min:
+                first = container_corners[i]
+                curr_min = d
+        # find corner corresponding to 'first'
+        sec = None
+        for i in range(len(container_corners)):
+            d = dist(first, container_corners[i])
+            if container_corners[i] != first and (
+                    CONTAINER_WIDTH + CONTAINER_WIDTH * EPSILON >= d >= CONTAINER_WIDTH - CONTAINER_WIDTH * EPSILON):
+                sec = container_corners[i]
+                break
+        return first, sec
+
+    @staticmethod
+    def get_pose_from_point(point):
+        pose = PoseStamped()
+        pose.pose.position.x = point.x
+        pose.pose.position.y = point.y
+        pose.header.frame_id = "base_link"
+        return pose
+
     def execute(self, userdata):
         """
         Executes the 'DRIVE INTO CONTAINER' state.
@@ -261,16 +294,31 @@ class DriveIntoContainer(smach.State):
                 center = Point()
                 center.x = np.average([p.x for p in container_corners])
                 center.y = np.average([p.y for p in container_corners])
+
                 self.center_pub.publish(center)
                 angle = math.atan2(self.robot_pose.position.y - center.y, self.robot_pose.position.x - center.x)
                 center_res = self.compute_center(center, angle)
 
                 if center_res:
+                    first, sec = self.compute_entry_from_four_corners(container_corners)
+                    first_pose = self.get_pose_from_point(first)
+                    sec_pose = self.get_pose_from_point(sec)
+                    # transform poses to 'map' before driving in with mbf (would impair precision)
+                    first_pose = transform_pose(TF_BUFFER, first_pose, "map")
+                    sec_pose = transform_pose(TF_BUFFER, sec_pose, "map")
+
                     if self.drive_in(center_res):
-                        userdata.drive_into_container_output = get_success_msg()
+                        # transform back to the new 'base_link'
+                        first_pose = transform_pose(TF_BUFFER, first_pose, "base_link")
+                        sec_pose = transform_pose(TF_BUFFER, sec_pose, "base_link")
+                        first = Point(first_pose.pose.position.x, first_pose.pose.position.y, 0)
+                        sec = Point(sec_pose.pose.position.x, sec_pose.pose.position.y, 0)
                         # clear marker
                         self.center_pub.publish(Point())
+                        # pass the detected entry corners to the next state
+                        userdata.drive_into_container_output = [first, sec]
                         return 'succeeded'
+
                     userdata.drive_into_container_output = get_failure_msg()
                     return 'aborted'
         userdata.drive_into_container_output = get_failure_msg()
@@ -284,16 +332,13 @@ class DriveIntoContainer(smach.State):
         :param center_pos: goal position at the center of the container
         :return: true if successful, false otherwise
         """
-        pose_stamped = transform_pose(TF_BUFFER, center_pos, 'map')
         move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
         move_base_client.wait_for_server()
 
         goal = MoveBaseGoal()
-        goal.target_pose.header.frame_id = "map"
+        goal.target_pose = center_pos
         goal.target_pose.header.stamp = rospy.Time.now()
-
-        goal.target_pose.pose.position = pose_stamped.pose.position
-        goal.target_pose.pose.orientation = pose_stamped.pose.orientation
+        goal.target_pose = transform_pose(TF_BUFFER, goal.target_pose, 'map')
 
         move_base_client.send_goal(goal)
         rospy.loginfo("now waiting...")
@@ -338,6 +383,7 @@ class LocalizeChargingStation(smach.State):
         client = actionlib.SimpleActionClient('localize_charging_station', LocalizeAction)
         client.wait_for_server()
         goal = LocalizeGoal()
+        goal.corners = userdata.localize_charging_station_input
         client.send_goal(goal)
         client.wait_for_result()
         res = client.get_result().station_pos
@@ -399,12 +445,16 @@ class AlignRobotToChargingStation(smach.State):
 
 class Dock(smach.State):
     def __init__(self):
-        smach.State.__init__(self, outcomes=['succeeded', 'aborted'])
+        smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
+                             input_keys=['dock_input'],
+                             output_keys=['dock_output'])
+
         self.clear_markers_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
     def execute(self, userdata):
         rospy.loginfo('executing state DOCK')
         self.clear_markers_pub.publish("clearing")
+        userdata.dock_output = get_success_msg()
         return 'succeeded'
 
 
@@ -439,18 +489,20 @@ class DockingStateMachine(smach.StateMachine):
             self.add('DRIVE_INTO_CONTAINER', DriveIntoContainer(),
                      transitions={'succeeded': 'LOCALIZE_CHARGING_STATION',
                                   'aborted': 'failed'},
-                     remapping={'drive_into_container_output': 'sm_output'})
+                     remapping={'drive_into_container_output': 'sm_input'})
 
             self.add('LOCALIZE_CHARGING_STATION', LocalizeChargingStation(),
                      transitions={'succeeded': 'ALIGN_ROBOT_TO_CHARGING_STATION', 'aborted': 'failed'},
-                     remapping={'localize_charging_station_output': 'sm_input'})
+                     remapping={'localize_charging_station_input': 'sm_input',
+                                'localize_charging_station_output': 'sm_input'})
 
             self.add('ALIGN_ROBOT_TO_CHARGING_STATION', AlignRobotToChargingStation(),
                      transitions={'succeeded': 'DOCK', 'aborted': 'failed'},
                      remapping={'align_robot_to_charging_station_input': 'sm_input'})
 
             self.add('DOCK', Dock(),
-                     transitions={'succeeded': 'docked', 'aborted': 'failed'})
+                     transitions={'succeeded': 'docked', 'aborted': 'failed'},
+                     remapping={'dock_output': 'sm_output'})
 
 
 def main():
