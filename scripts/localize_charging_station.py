@@ -54,13 +54,13 @@ class LocalizationServer:
             second_corner.y = corners[1].y
             return first_corner, second_corner
 
-    def compute_external_pose(self, first_corner, second_corner):
+    def compute_relative_pose(self, first_corner, second_corner):
         """
-        Compute an external pose relative to the container.
+        Computes a pose relative to the container and the robot's position.
 
         :param first_corner: first corner of the container entry
         :param second_corner: second corner of the container entry
-        :return: external pose
+        :return: relative pose
         """
         pose = PoseStamped()
         pose.header.frame_id = "base_link"
@@ -72,17 +72,16 @@ class LocalizationServer:
         pose.pose.orientation = Quaternion(*q)
         return pose
 
-    def execute(self, goal):
+    def execute(self, action_input):
         """
         Executes the action server.
 
-        :param goal: goal to be performed (dummy atm)
+        :param action_input: input to be used (entry corners)
         """
-        res = self.retrieve_corner_points()
-        if res:
-            first_corner, second_corner = res
+        if action_input:
+            first_corner, second_corner = action_input.corners
             result = LocalizeResult()
-            pose = self.compute_external_pose(first_corner, second_corner)
+            pose = self.compute_relative_pose(first_corner, second_corner)
             result.station_pos = pose
 
             # visualize result
