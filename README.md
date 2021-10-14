@@ -36,6 +36,7 @@
         - [arox_navigation_flex](https://git.ni.dfki.de/arox/arox_core/arox_navigation_flex): `low_yaw_goal_tolerance`
         - [arox_launch](https://git.ni.dfki.de/arox/arox_core/arox_launch): `frame_launch`
         - [arox_indoor_navi](https://git.ni.dfki.de/arox/arox_core/arox_indoor_navi): `sim_launch_detection_config`
+        - [map_langsenkamp](https://git.ni.dfki.de/zla/map_langsenkamp): `feature_new_map`
 - [arox_description](https://git.ni.dfki.de/arox/arox_core/arox_description): ROS launch files and URDF model for the AROX system
     - branch: `feature_flying_sick_tim`
 - [container_description](https://git.ni.dfki.de/arox/container_description): ROS launch files and URDF model for the mobile container (charge station)
