@@ -1,32 +1,43 @@
-# Autonomes Docking: AROX -> induktive Ladestation
+# Autonomous Docking: AROX -> Inductive Charging Station
 
-**Teilprobleme:**
-- <u>VORAUSGESETZT</u> - **Schritt 0: Roboter anhand von Sensordaten vor Container navigieren** (GPS, Laserscans, ggf. Kamera)
-    - *Nachbedingung*: Roboter steht in best. Bereich vor Container
+- <u>Assumed:</u> **State: CONTAINER_PROXIMITY**
+    - robot drove near the container, e.g. based on GPS
+    - *postcondition*: robot faces container in certain area
 --------------------------------------------------------------------------
-- **Schritt 1: Container erkennen** (Laserscans, ggf. Kamera)
-    - *Vorbedingung*: Roboter steht in best. Bereich vor Container
-    - *Nachbedingung*: Container + Rampe lokalisiert
-- **Schritt 2: Roboter vor der Rampe ausrichten** (definierte Pose +/- x)
-    - *Vorbedingungen*: 
-        - Roboter vor Container
-        - Container + Rampe lokalisiert
-        - Rampe unten
-    - *Nachbedingung*: Roboter vor Rampe ausgerichtet
-- **Schritt 3: In Container fahren und anhalten**
-    - *Vorbedingungen*:
-        - Roboter vor Rampe ausgerichtet
-        - Freiraum im Container
-    - *Nachbedingung*: Roboter im Container
-- **Schritt 4: Ladestation lokalisieren** (Laserscans, ggf. Kamera)
-    - *Vorbedingung*: Roboter im Container
-    - *Nachbedingung*: Ladestation lokalisiert
-- **Schritt 5: An Ladestation ausrichten** (definierte Pose +/- x)
-    - *Vorbedingung*: Ladestation lokalisiert
-    - *Nachbedingung*: Roboter an Ladestation ausgerichtet
-- **Schritt 6: Docking an Ladestation**
-    - *Vorbedingung*: Roboter an Ladestation ausgerichtet
-    - *Nachbedingung*: Roboter lädt
+- **State: DETECT_CONTAINER** (laser scans, possibly camera)
+    - *precondition*: robot faces container in certain area
+    - *postcondition*: localized container + ramp
+- **State: ALIGN_ROBOT_TO_RAMP** (defined pose)
+    - *preconditions*: 
+        - robot in front of container
+        - localized container + ramp
+        - ramp lowered
+    - *postcondition*: robot aligned in front of ramp
+- **State: DRIVE_INTO_CONTAINER**
+    - *preconditions*:
+        - robot aligned in front of ramp
+        - free space in container
+    - *postcondition*: robot inside the container
+- **State: LOCALIZE_CHARGING_STATION** (laser scans, possibly camera)
+    - *precondition*: robot inside the container
+    - *postcondition*: localized charging station
+- **State: ALIGN_ROBOT_TO_CHARGING_STATION** (defined pose)
+    - *precondition*: localized charging station
+    - *postcondition*: robot aligned with charging station
+- **State: DOCK**
+    - *precondition*: robot aligned with charging station
+    - *postcondition*: robot charging
+
+## Undocking
+
+- <u>Assumed:</u> **State: INSIDE_CONTAINER**
+    - *postcondition*: robot inside the container
+- **State: DETECT_ENTRY**
+    - *precondition*: robot inside the container
+    - *postcondition*: localized container entry
+- **State: DRIVE_OUT_OF_CONTAINER**
+    - *precondition*: localized container entry
+    - *postcondition*: robot located in front of the container
 
 # Dependencies / Compatible Branches
 
