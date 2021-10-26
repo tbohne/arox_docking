@@ -59,7 +59,7 @@
 - [velodyne_simulator](https://bitbucket.org/DataspeedInc/velodyne_simulator/src/master/): URDF and gazebo plugin to provide simulated data from Velodyne laser scanners
     - branch: `master`
 - [gazebo_langsenkamp](https://git.ni.dfki.de/zla/gazebo_langsenkamp): Langsenkamp world (test field)
-    - branch: `master`
+    - branch: `feature_lta_layout`
 
 ## Usage
 
