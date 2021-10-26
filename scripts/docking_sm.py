@@ -186,7 +186,7 @@ class AlignRobotToRamp(smach.State):
         rospy.loginfo('executing state ALIGN_ROBOT_TO_RAMP')
 
         if userdata.align_robot_to_ramp_input:
-            rospy.loginfo("got userdata: %s", userdata.align_robot_to_ramp_input)
+            #rospy.loginfo("got userdata: %s", userdata.align_robot_to_ramp_input)
             pose_stamped = userdata.align_robot_to_ramp_input
             pose_stamped = transform_pose(TF_BUFFER, pose_stamped, "map")
             move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
@@ -202,9 +202,9 @@ class AlignRobotToRamp(smach.State):
             move_base_client.send_goal(goal)
             rospy.loginfo("now waiting...")
             move_base_client.wait_for_result()
-            rospy.loginfo("after wait: %s", move_base_client.get_result())
-            rospy.loginfo("sleeping for 5s...")
-            rospy.sleep(5)
+            #rospy.loginfo("result: %s", move_base_client.get_result())
+            # rospy.loginfo("sleeping for 5s...")
+            # rospy.sleep(5)
             # clear arrow maker
             self.entry_pub.publish(PoseStamped())
             return 'succeeded'
@@ -307,6 +307,8 @@ class DriveIntoContainer(smach.State):
                     first_pose = transform_pose(TF_BUFFER, first_pose, "map")
                     sec_pose = transform_pose(TF_BUFFER, sec_pose, "map")
 
+                    rospy.loginfo("DRIVING INTO CONTAINER..")
+
                     if self.drive_in(center_res):
                         # transform back to the new 'base_link'
                         first_pose = transform_pose(TF_BUFFER, first_pose, "base_link")
@@ -393,7 +395,7 @@ class LocalizeChargingStation(smach.State):
             userdata.localize_charging_station_output = get_failure_msg()
             return 'aborted'
 
-        rospy.loginfo("DETECTED CHARGING STATION: %s", res)
+        rospy.loginfo("DETECTED CHARGING STATION..")
         pose = transform_pose(TF_BUFFER, res, 'map')
         userdata.localize_charging_station_output = pose
         return 'succeeded'
@@ -413,7 +415,7 @@ class AlignRobotToChargingStation(smach.State):
         twist = Twist()
         twist.linear.x = -3.0
         rate = rospy.Rate(4)
-        for _ in range(4):
+        for _ in range(3):
             self.cmd_vel_pub.publish(twist)
             rate.sleep()
 

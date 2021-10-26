@@ -121,7 +121,7 @@ class DetectEntry(smach.State):
             return first_corner.x - second_corner.x, first_corner.y - second_corner.y
 
     def determine_external_point(self, base_point, res_vec, corners, front_corner_indices):
-        distance = CONTAINER_LENGTH
+        distance = CONTAINER_LENGTH * 1.5
         if len(corners) == 2:
             # compensate center point distance
             distance += CONTAINER_LENGTH / 2
@@ -258,6 +258,8 @@ class DriveOutOfContainer(smach.State):
         rospy.loginfo("now waiting...")
         move_base_client.wait_for_result()
 
+        # rospy.loginfo("mbf res: %s", move_base_client.get_result())
+
         if move_base_client.get_result().outcome == MBF_FAILURE:
             rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
             return False
@@ -267,7 +269,7 @@ class DriveOutOfContainer(smach.State):
         rospy.loginfo('executing state DRIVE_OUT_OF_CONTAINER')
 
         if userdata.drive_out_of_container_input:
-            rospy.loginfo("got userdata: %s", userdata.drive_out_of_container_input)
+            #rospy.loginfo("got userdata: %s", userdata.drive_out_of_container_input)
 
             if self.drive_to(userdata.drive_out_of_container_input):
                 userdata.drive_out_of_container_output = get_success_msg()
