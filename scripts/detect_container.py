@@ -122,7 +122,7 @@ class DetectionServer:
             if already_tested or len(point_list) <= dynamic_acc_thresh_based_on_dist or not reasonable_line:
                 hough_space[c][r] = 0
                 base_attempts += 1
-                rospy.loginfo("base attempt: %s", base_attempts)
+                #rospy.loginfo("base attempt: %s", base_attempts)
                 continue
 
             # visualize base line
@@ -137,7 +137,7 @@ class DetectionServer:
             update_avg_points(avg_points, point_list)
             hough_space[c][r] = 0
             hough_copy = np.copy(hough_space)
-            rospy.loginfo("base lines tested: %s", len(tested_base_lines))
+            #rospy.loginfo("base lines tested: %s", len(tested_base_lines))
             tested_base_lines.append((radius, theta_base))
 
             # TODO: potential problem: if something didn't work out as base line, it is set to 0 and not used at all
@@ -183,7 +183,7 @@ class DetectionServer:
                 hough_copy[c][r] = 0
 
             # at least two corners found
-            rospy.loginfo("FOUND LINE PARAMS: %s", len(found_line_params))
+            #rospy.loginfo("FOUND LINE PARAMS: %s", len(found_line_params))
             if len(found_line_params) >= 3:
                 tmp = self.publish_detected_container(found_line_params)
                 if len(tmp) >= 2:
@@ -364,8 +364,9 @@ def compute_avg_point(point_list):
     :return: avg point
     """
     avg = Point()
-    avg.x = np.average([p.x for p in point_list])
-    avg.y = np.average([p.y for p in point_list])
+    if len(point_list) > 0:
+        avg.x = np.average([p.x for p in point_list])
+        avg.y = np.average([p.y for p in point_list])
     return avg
 
 
