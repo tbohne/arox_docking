@@ -172,7 +172,7 @@ class AlignRobotToRamp(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['align_robot_to_ramp_input'],
-                             output_keys=['align_robot_to_ramp_output'])
+                             output_keys=['align_robot_to_ramp_output', 'sm_output'])
 
         self.entry_pub = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
 
@@ -202,12 +202,16 @@ class AlignRobotToRamp(smach.State):
             move_base_client.send_goal(goal)
             rospy.loginfo("now waiting...")
             move_base_client.wait_for_result()
+
+            # TODO: add error treatment for mbf failures
+
             #rospy.loginfo("result: %s", move_base_client.get_result())
             # rospy.loginfo("sleeping for 5s...")
             # rospy.sleep(5)
             # clear arrow maker
             self.entry_pub.publish(PoseStamped())
             return 'succeeded'
+        userdata.sm_output = get_failure_msg()
         return 'aborted'
 
 
@@ -219,7 +223,7 @@ class DriveIntoContainer(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['drive_into_container_input'],
-                             output_keys=['drive_into_container_output'])
+                             output_keys=['drive_into_container_output', 'sm_output'])
 
         self.robot_pose = None
         self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
@@ -321,9 +325,9 @@ class DriveIntoContainer(smach.State):
                         userdata.drive_into_container_output = [first, sec]
                         return 'succeeded'
 
-                    userdata.drive_into_container_output = get_failure_msg()
+                    userdata.sm_output = get_failure_msg()
                     return 'aborted'
-        userdata.drive_into_container_output = get_failure_msg()
+        userdata.sm_output = get_failure_msg()
         return 'aborted'
 
     @staticmethod
@@ -376,7 +380,7 @@ class LocalizeChargingStation(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['localize_charging_station_input'],
-                             output_keys=['localize_charging_station_output'])
+                             output_keys=['localize_charging_station_output', 'sm_output'])
 
     @staticmethod
     def execute(userdata):
@@ -393,6 +397,7 @@ class LocalizeChargingStation(smach.State):
         # empty res
         if res.pose.position.x == 0 and res.pose.position.y == 0 and res.pose.position.z == 0:
             userdata.localize_charging_station_output = get_failure_msg()
+            userdata.sm_output = get_failure_msg()
             return 'aborted'
 
         rospy.loginfo("DETECTED CHARGING STATION..")
@@ -405,7 +410,7 @@ class AlignRobotToChargingStation(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['align_robot_to_charging_station_input'],
-                             output_keys=['align_robot_to_charging_station_output'])
+                             output_keys=['align_robot_to_charging_station_output', 'sm_output'])
 
         self.cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
 
@@ -439,6 +444,7 @@ class AlignRobotToChargingStation(smach.State):
 
         if move_base_client.get_result().outcome == MBF_FAILURE:
             rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
+            userdata.sm_output = move_base_client.get_goal_status_text()
             return 'aborted'
 
         self.move_backwards_to_wall()

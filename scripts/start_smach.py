@@ -11,6 +11,8 @@ def start_smach():
 
     for i in range(10):
 
+        rospy.loginfo("START DOCKING - UNDOCKING PROCEDURE - iteration: %s", i)
+
         docking_client = actionlib.SimpleActionClient('dock_to_charging_station', DockAction)
         goal_msg = DockAction().action_goal
         goal_msg.goal = "custom_goal"
