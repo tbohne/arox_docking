@@ -43,7 +43,7 @@ class DetectionServer:
         # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
         self.scan_sub = rospy.Subscriber("/scanVelodyneFrame", LaserScan, self.scan_callback, queue_size=1)
         # subscribe to robot pose
-        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
+        self.pose_sub = rospy.Subscriber("/odometry/filtered_map", Odometry, self.odom_callback, queue_size=1)
 
         # publishers for debugging markers (visualizations)
         self.line_pub = rospy.Publisher("/publish_lines", PointArray, queue_size=1)

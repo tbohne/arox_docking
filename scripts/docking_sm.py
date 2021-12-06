@@ -9,10 +9,13 @@ import smach_ros
 import tf2_ros
 from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, MBF_PAT_EXCEEDED, \
     DETECTION_ATTEMPTS
+
 from arox_docking.msg import DockAction, DetectAction, DetectGoal, LocalizeGoal, LocalizeAction
 from arox_docking.util import dist, transform_pose, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Twist
-from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
+from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal,RecoveryAction,RecoveryGoal
+from arox_navigation_flex.msg import drive_to_goalAction
+from arox_navigation_flex.msg import drive_to_goalGoal as dtg_Goal
 from std_msgs.msg import String
 from nav_msgs.msg import Odometry
 from tf.transformations import quaternion_from_euler
@@ -38,6 +41,21 @@ class ContainerProximity(smach.State):
         """
         rospy.loginfo('executing state CONTAINER_PROXIMITY')
         # TODO: add gps check - correct area?
+        rospy.loginfo('CLEARING FAKE OBSTACLES')
+        rec_client = actionlib.SimpleActionClient("move_base_flex/recovery",RecoveryAction)
+        rec_client.wait_for_server()
+        #ra_1 = RecoveryGoal('rotate_recovery',2)
+        ra_2 = RecoveryGoal('clear_costmap',2)
+     
+        #rec_client.send_goal(ra_1)
+        #rospy.loginfo("rotating...")
+        #ra_1_res=rec_client.wait_for_result()
+        #if ra_1_res:
+        rec_client.send_goal(ra_2)
+        rospy.loginfo("clear costmap...")
+        rec_client.wait_for_result()
+
+        rospy.loginfo("Done recovery...")
         return 'succeeded'
 
 
@@ -53,7 +71,7 @@ class DetectContainer(smach.State):
 
         self.entry_pub = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
         self.robot_pose = None
-        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
+        self.pose_sub = rospy.Subscriber("/odometry/filtered_map", Odometry, self.odom_callback, queue_size=1)
 
     def odom_callback(self, odom):
         """
@@ -206,8 +224,22 @@ class AlignRobotToRamp(smach.State):
             # rospy.loginfo("sleeping for 5s...")
             # rospy.sleep(5)
             # clear arrow maker
-            self.entry_pub.publish(PoseStamped())
-            return 'succeeded'
+            #rec_client = actionlib.SimpleActionClient("move_base_flex/recovery",RecoveryAction)
+            #rec_client.wait_for_server()
+            #ra_1 = RecoveryGoal('rotate_recovery',2)
+            #ra_2 = RecoveryGoal('clear_costmap',2)
+     
+            #rec_client.send_goal(ra_1)
+            #rospy.loginfo("rotating...")
+            #ra_1_res=rec_client.wait_for_result()
+            #if ra_1_res:
+            #    rec_client.send_goal(ra_2)
+            #    rospy.loginfo("clear costmap...")
+            #    rec_client.wait_for_result()
+
+            #rospy.loginfo("Done recovery...")
+            #self.entry_pub.publish(PoseStamped())
+            #return 'succeeded'
         return 'aborted'
 
 
@@ -222,7 +254,7 @@ class DriveIntoContainer(smach.State):
                              output_keys=['drive_into_container_output'])
 
         self.robot_pose = None
-        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
+        self.pose_sub = rospy.Subscriber("/odometry/filtered_map", Odometry, self.odom_callback, queue_size=1)
         self.center_pub = rospy.Publisher("/publish_center", Point, queue_size=1)
 
     def odom_callback(self, odom):
@@ -475,7 +507,7 @@ class DockingStateMachine(smach.StateMachine):
 
         with self:
             self.add('CONTAINER_PROXIMITY', ContainerProximity(), transitions={
-                'succeeded': 'DETECT_CONTAINER',
+                'succeeded': 'DRIVE_INTO_CONTAINER',
                 'aborted': 'failed'})
 
             self.add('DETECT_CONTAINER', DetectContainer(),

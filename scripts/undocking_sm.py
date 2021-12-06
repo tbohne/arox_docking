@@ -52,7 +52,7 @@ class DetectEntry(smach.State):
 
         self.robot_pose = None
         # subscribe to robot pose (ground truth)
-        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
+        self.pose_sub = rospy.Subscriber("/odometry/filtered_map", Odometry, self.odom_callback, queue_size=1)
         self.outdoor_pub = rospy.Publisher("/publish_outdoor", Point, queue_size=1)
 
     def odom_callback(self, odom):
