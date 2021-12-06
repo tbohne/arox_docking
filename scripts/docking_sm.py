@@ -83,14 +83,15 @@ class DetectContainer(smach.State):
         res = client.get_result().corners
         if res:
             base_point, container_entry = self.determine_container_entry(res)
-            angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
-            pose = PoseStamped()
-            pose.pose.position = container_entry
-            q = quaternion_from_euler(0, 0, angle)
-            pose.pose.orientation = Quaternion(*q)
-            self.entry_pub.publish(pose)
-            userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
-            return 'succeeded'
+            if base_point is not None and container_entry is not None:
+                angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
+                pose = PoseStamped()
+                pose.pose.position = container_entry
+                q = quaternion_from_euler(0, 0, angle)
+                pose.pose.orientation = Quaternion(*q)
+                self.entry_pub.publish(pose)
+                userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
+                return 'succeeded'
         return 'aborted'
 
     def determine_container_entry(self, points):
@@ -107,6 +108,17 @@ class DetectContainer(smach.State):
         first = sec = None
 
         if len(corners) == 2:
+            corner_dist = dist(self.robot_pose.position, corners[0])
+            avg_dists = [dist(self.robot_pose.position, p) for p in avg_points]
+            for d in avg_dists:
+                if corner_dist - d > CONTAINER_WIDTH / 2:
+                    rospy.loginfo("##############################################")
+                    rospy.loginfo("##############################################")
+                    rospy.loginfo("detected wrong, i.e. closed, side of the container as entry..")
+                    rospy.loginfo("##############################################")
+                    rospy.loginfo("##############################################")
+                    return None, None
+
             first, sec = corners
         elif len(corners) == 4:
             first = corners[0]
