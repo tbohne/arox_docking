@@ -11,6 +11,7 @@ from geometry_msgs.msg import Point
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav_msgs.msg import Odometry
 from tf.transformations import quaternion_from_euler
+from arox_docking import config
 
 TF_BUFFER = None
 
@@ -73,8 +74,8 @@ class LocalizationServer:
         charger = PoseStamped()
         charger.header.frame_id = "charger"
         charger.header.stamp = rospy.Time.now()
-        charger.pose.position.x = -1.0
-        charger.pose.position.y = 1.15
+        charger.pose.position.x = config.CHARGING_STATION_POS_X
+        charger.pose.position.y = config.CHARGING_STATION_POS_Y
         ##############################################
 
         ############### corner poses #################

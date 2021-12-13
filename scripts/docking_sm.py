@@ -8,7 +8,7 @@ import smach
 import smach_ros
 import tf2_ros
 from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, MBF_PAT_EXCEEDED, \
-    DETECTION_ATTEMPTS
+    DETECTION_ATTEMPTS, CHARGING_STATION_POS_X, CHARGING_STATION_POS_Y
 from arox_docking.msg import DockAction, DetectAction, DetectGoal, LocalizeGoal, LocalizeAction
 from arox_docking.util import dist, transform_pose, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Twist
@@ -450,8 +450,8 @@ class AlignRobotToChargingStation(smach.State):
         goal.target_pose.pose.position = charging_station_pose.pose.position
         goal.target_pose.pose.orientation = charging_station_pose.pose.orientation
 
-        goal.target_pose.pose.position.x += 1.0
-        goal.target_pose.pose.position.y += 1.15
+        goal.target_pose.pose.position.x -= CHARGING_STATION_POS_X
+        goal.target_pose.pose.position.y += CHARGING_STATION_POS_Y
 
         move_base_client.send_goal(goal)
         rospy.loginfo("now waiting...")
