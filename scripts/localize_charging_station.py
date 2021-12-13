@@ -6,7 +6,7 @@ import rospy
 import tf2_ros
 from arox_docking.msg import DetectAction, DetectGoal, LocalizeAction
 from arox_docking.msg import LocalizeResult
-from arox_docking.util import transform_pose
+from arox_docking.util import transform_pose, dist
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav_msgs.msg import Odometry
@@ -65,9 +65,46 @@ class LocalizationServer:
         pose = PoseStamped()
         pose.header.frame_id = "base_link"
         pose.header.stamp = rospy.Time.now()
-        pose.pose.position.x = (self.robot_pos.x + second_corner.x + first_corner.x) / 3
-        pose.pose.position.y = (self.robot_pos.y + second_corner.y + first_corner.y) / 3
-        angle = math.atan2(first_corner.y - second_corner.y, first_corner.x - second_corner.x)
+
+        # pose.pose.position.x = (self.robot_pos.x + second_corner.x + first_corner.x) / 3
+        # pose.pose.position.y = (self.robot_pos.y + second_corner.y + first_corner.y) / 3
+
+        ############### charger pose #################
+        charger = PoseStamped()
+        charger.header.frame_id = "charger"
+        charger.header.stamp = rospy.Time.now()
+        charger.pose.position.x = -1.0
+        charger.pose.position.y = 1.15
+        ##############################################
+
+        ############### corner poses #################
+        first = PoseStamped()
+        first.header.frame_id = "base_link"
+        first.header.stamp = rospy.Time.now()
+        first.pose.position.x = first_corner.x
+        first.pose.position.y = first_corner.y
+
+        sec = PoseStamped()
+        sec.header.frame_id = "base_link"
+        sec.header.stamp = rospy.Time.now()
+        sec.pose.position.x = second_corner.x
+        sec.pose.position.y = second_corner.y
+        ##############################################
+
+        pose_first = transform_pose(TF_BUFFER, first, 'charger')
+        pose_sec = transform_pose(TF_BUFFER, sec, 'charger')
+
+        d1 = dist(charger.pose.position, pose_first.pose.position)
+        d2 = dist(charger.pose.position, pose_sec.pose.position)
+        rospy.loginfo("d1: %s", d1)
+        rospy.loginfo("d2: %s", d2)
+        if d1 < d2:
+            pose.pose.position = first.pose.position
+            angle = math.atan2(first_corner.y - second_corner.y, first_corner.x - second_corner.x)
+        else:
+            pose.pose.position = sec.pose.position
+            angle = math.atan2(second_corner.y - first_corner.y, second_corner.x - first_corner.x)
+
         q = quaternion_from_euler(0, 0, angle)
         pose.pose.orientation = Quaternion(*q)
         return pose

@@ -450,6 +450,9 @@ class AlignRobotToChargingStation(smach.State):
         goal.target_pose.pose.position = charging_station_pose.pose.position
         goal.target_pose.pose.orientation = charging_station_pose.pose.orientation
 
+        goal.target_pose.pose.position.x += 1.0
+        goal.target_pose.pose.position.y += 1.15
+
         move_base_client.send_goal(goal)
         rospy.loginfo("now waiting...")
         move_base_client.wait_for_result()
