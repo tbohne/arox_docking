@@ -319,9 +319,11 @@ class DriveIntoContainer(smach.State):
                     first, sec = self.compute_entry_from_four_corners(container_corners)
                     first_pose = self.get_pose_from_point(first)
                     sec_pose = self.get_pose_from_point(sec)
+                    center_pose = self.get_pose_from_point(center)
                     # transform poses to 'map' before driving in with mbf (would impair precision)
                     first_pose = transform_pose(TF_BUFFER, first_pose, "map")
                     sec_pose = transform_pose(TF_BUFFER, sec_pose, "map")
+                    center_pose = transform_pose(TF_BUFFER, center_pose, "map")
 
                     rospy.loginfo("DRIVING INTO CONTAINER..")
 
@@ -329,12 +331,14 @@ class DriveIntoContainer(smach.State):
                         # transform back to the new 'base_link'
                         first_pose = transform_pose(TF_BUFFER, first_pose, "base_link")
                         sec_pose = transform_pose(TF_BUFFER, sec_pose, "base_link")
+                        center_pose = transform_pose(TF_BUFFER, center_pose, "base_link")
                         first = Point(first_pose.pose.position.x, first_pose.pose.position.y, 0)
                         sec = Point(sec_pose.pose.position.x, sec_pose.pose.position.y, 0)
+                        center = Point(center_pose.pose.position.x, center_pose.pose.position.y, 0)
                         # clear marker
                         self.center_pub.publish(Point())
                         # pass the detected entry corners to the next state
-                        userdata.drive_into_container_output = [first, sec]
+                        userdata.drive_into_container_output = [first, sec, center]
                         return 'succeeded'
 
                     userdata.sm_output = get_failure_msg()
@@ -449,9 +453,6 @@ class AlignRobotToChargingStation(smach.State):
         charging_station_pose = userdata.align_robot_to_charging_station_input
         goal.target_pose.pose.position = charging_station_pose.pose.position
         goal.target_pose.pose.orientation = charging_station_pose.pose.orientation
-
-        goal.target_pose.pose.position.x -= CHARGING_STATION_POS_X
-        goal.target_pose.pose.position.y += CHARGING_STATION_POS_Y
 
         move_base_client.send_goal(goal)
         rospy.loginfo("now waiting...")
