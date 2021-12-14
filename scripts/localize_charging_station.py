@@ -12,6 +12,7 @@ from geometry_msgs.msg import PoseStamped, Quaternion
 from nav_msgs.msg import Odometry
 from tf.transformations import quaternion_from_euler
 from arox_docking import config
+import numpy as np
 
 TF_BUFFER = None
 
@@ -55,7 +56,7 @@ class LocalizationServer:
             second_corner.y = corners[1].y
             return first_corner, second_corner
 
-    def compute_relative_pose(self, first_corner, second_corner):
+    def compute_relative_pose(self, first_corner, second_corner, center):
         """
         Computes a pose relative to the container and the robot's position.
 
@@ -72,7 +73,7 @@ class LocalizationServer:
 
         ############### charger pose #################
         charger = PoseStamped()
-        charger.header.frame_id = "charger"
+        charger.header.frame_id = "rampB"
         charger.header.stamp = rospy.Time.now()
         charger.pose.position.x = config.CHARGING_STATION_POS_X
         charger.pose.position.y = config.CHARGING_STATION_POS_Y
@@ -92,19 +93,65 @@ class LocalizationServer:
         sec.pose.position.y = second_corner.y
         ##############################################
 
-        pose_first = transform_pose(TF_BUFFER, first, 'charger')
-        pose_sec = transform_pose(TF_BUFFER, sec, 'charger')
+        pose_first = transform_pose(TF_BUFFER, first, 'map')
+        pose_sec = transform_pose(TF_BUFFER, sec, 'map')
+        charger = transform_pose(TF_BUFFER, charger, 'map')
 
         d1 = dist(charger.pose.position, pose_first.pose.position)
         d2 = dist(charger.pose.position, pose_sec.pose.position)
-        rospy.loginfo("d1: %s", d1)
-        rospy.loginfo("d2: %s", d2)
         if d1 < d2:
             pose.pose.position = first.pose.position
-            angle = math.atan2(first_corner.y - second_corner.y, first_corner.x - second_corner.x)
+            direction_vector = (second_corner.x - first_corner.x, second_corner.y - first_corner.y)
+            A = sec.pose.position
         else:
             pose.pose.position = sec.pose.position
-            angle = math.atan2(second_corner.y - first_corner.y, second_corner.x - first_corner.x)
+            direction_vector = (first_corner.x - second_corner.x, first_corner.y - second_corner.y)
+            A = first.pose.position
+
+        angle = math.atan2(direction_vector[1], direction_vector[0])
+
+        B = pose.pose.position
+        P = Point()
+        P.x = (A.x + B.x) / 2
+        P.y = (A.y + B.y) / 2
+
+        BA = (A.x - B.x, A.y - B.y)
+        PC = (center.x - P.x, center.y - P.y)
+
+        BA_length = np.sqrt(BA[0] ** 2 + BA[1] ** 2)
+        BA_res = (BA[0] / BA_length, BA[1] / BA_length)
+
+        PC_length = np.sqrt(PC[0] ** 2 + PC[1] ** 2)
+        PC_res = (PC[0] / PC_length, PC[1] / PC_length)
+
+        G1 = Point()
+        G1.x = B.x + BA_res[0] * config.CHARGING_STATION_POS_X * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+        G1.y = B.y + PC_res[1] * config.CHARGING_STATION_POS_Y * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+
+        G2 = Point()
+        G2.x = B.x - BA_res[0] * config.CHARGING_STATION_POS_X * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+        G2.y = B.y - PC_res[1] * config.CHARGING_STATION_POS_Y * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+
+        G3 = Point()
+        G3.x = B.x + BA_res[0] * config.CHARGING_STATION_POS_X * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+        G3.y = B.y - PC_res[1] * config.CHARGING_STATION_POS_Y * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+
+        G4 = Point()
+        G4.x = B.x - BA_res[0] * config.CHARGING_STATION_POS_X * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+        G4.y = B.y + PC_res[1] * config.CHARGING_STATION_POS_Y * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+
+        d1 = dist(G1, center)
+        d2 = dist(G2, center)
+        d3 = dist(G3, center)
+        d4 = dist(G4, center)
+        if d1 <= d2 and d1 <= d3 and d1 <= d4:
+            pose.pose.position = G1
+        elif d2 <= d1 and d2 <= d3 and d2 <= d4:
+            pose.pose.position = G2
+        elif d3 <= d1 and d3 <= d2 and d3 <= d4:
+            pose.pose.position = G3
+        else:
+            pose.pose.position = G4
 
         q = quaternion_from_euler(0, 0, angle)
         pose.pose.orientation = Quaternion(*q)
@@ -117,9 +164,9 @@ class LocalizationServer:
         :param action_input: input to be used (entry corners)
         """
         if action_input:
-            first_corner, second_corner = action_input.corners
+            first_corner, second_corner, center = action_input.corners
             result = LocalizeResult()
-            pose = self.compute_relative_pose(first_corner, second_corner)
+            pose = self.compute_relative_pose(first_corner, second_corner, center)
             result.station_pos = pose
 
             # visualize result
