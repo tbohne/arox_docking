@@ -5,7 +5,7 @@ CONTAINER_WIDTH = 2.83
 CONTAINER_LENGTH = 3.7
 EPSILON = 0.2
 
-CHARGING_STATION_POS_X = -1.0
+CHARGING_STATION_POS_X = 1.0
 CHARGING_STATION_POS_Y = 1.15
 ###############################################################
 
