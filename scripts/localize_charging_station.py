@@ -58,6 +58,34 @@ class LocalizationServer:
             second_corner.y = corners[1].y
             return first_corner, second_corner
 
+    def create_all_candidate_points(self, source, vector_angle, vector_length):
+        """
+        Creates all candidate points based on the provided source point and the specified vector angle + length.
+
+        :param source: source point to start from
+        :param vector_angle: angle to target
+        :param vector_length: length to target
+        :return: candidate points
+        """
+        res_candidates = []
+        candidate_one = Point()
+        candidate_one.x = source.x + math.cos(vector_angle) * vector_length
+        candidate_one.y = source.y + math.sin(vector_angle) * vector_length
+        res_candidates.append(candidate_one)
+        candidate_two = Point()
+        candidate_two.x = source.x - math.cos(vector_angle) * vector_length
+        candidate_two.y = source.y - math.sin(vector_angle) * vector_length
+        res_candidates.append(candidate_two)
+        candidate_three = Point()
+        candidate_three.x = source.x + math.cos(vector_angle) * vector_length
+        candidate_three.y = source.y - math.sin(vector_angle) * vector_length
+        res_candidates.append(candidate_three)
+        candidate_four = Point()
+        candidate_four.x = source.x - math.cos(vector_angle) * vector_length
+        candidate_four.y = source.y + math.sin(vector_angle) * vector_length
+        res_candidates.append(candidate_four)
+        return res_candidates
+
     def compute_relative_pose(self, first_corner, second_corner, center):
         """
         Computes a pose relative to the container and the robot's position.
@@ -71,24 +99,17 @@ class LocalizationServer:
         pose.header.frame_id = "base_link"
         pose.header.stamp = rospy.Time.now()
 
-        ############### charger pose #################
+        ###################### poses #################
         charger = PoseStamped()
         charger.header.frame_id = "rampB"
-        charger.header.stamp = rospy.Time.now()
         charger.pose.position.x = config.CHARGING_STATION_POS_X
         charger.pose.position.y = config.CHARGING_STATION_POS_Y
-        ##############################################
-
-        ############### corner poses #################
         first = PoseStamped()
         first.header.frame_id = "base_link"
-        first.header.stamp = rospy.Time.now()
         first.pose.position.x = first_corner.x
         first.pose.position.y = first_corner.y
-
         sec = PoseStamped()
         sec.header.frame_id = "base_link"
-        sec.header.stamp = rospy.Time.now()
         sec.pose.position.x = second_corner.x
         sec.pose.position.y = second_corner.y
         ##############################################
@@ -107,7 +128,6 @@ class LocalizationServer:
             pose.pose.position = sec.pose.position
             direction_vector = (first_corner.x - second_corner.x, first_corner.y - second_corner.y)
             A = first.pose.position
-
         angle = math.atan2(direction_vector[1], direction_vector[0])
 
         B = pose.pose.position
@@ -115,41 +135,15 @@ class LocalizationServer:
         P.x = (A.x + B.x) / 2
         P.y = (A.y + B.y) / 2
 
-        LENGTH = math.sqrt(config.CHARGING_STATION_POS_X ** 2 + config.CHARGING_STATION_POS_Y ** 2)
-        ANG = math.atan(config.CHARGING_STATION_POS_X / config.CHARGING_STATION_POS_Y)
+        vector_length = math.sqrt(config.CHARGING_STATION_POS_X ** 2 + config.CHARGING_STATION_POS_Y ** 2)
+        vector_angle = math.atan(config.CHARGING_STATION_POS_X / config.CHARGING_STATION_POS_Y)
 
-        G1 = Point()
-        G1.x = B.x + math.cos(ANG) * LENGTH
-        G1.y = B.y + math.sin(ANG) * LENGTH
-
-        G2 = Point()
-        G2.x = B.x - math.cos(ANG) * LENGTH
-        G2.y = B.y - math.sin(ANG) * LENGTH
-
-        G3 = Point()
-        G3.x = B.x + math.cos(ANG) * LENGTH
-        G3.y = B.y - math.sin(ANG) * LENGTH
-
-        G4 = Point()
-        G4.x = B.x - math.cos(ANG) * LENGTH
-        G4.y = B.y + math.sin(ANG) * LENGTH
-
-        d1 = dist(G1, center)
-        d2 = dist(G2, center)
-        d3 = dist(G3, center)
-        d4 = dist(G4, center)
-        if d1 <= d2 and d1 <= d3 and d1 <= d4:
-            rospy.loginfo("G1")
-            pose.pose.position = G1
-        elif d2 <= d1 and d2 <= d3 and d2 <= d4:
-            rospy.loginfo("G2")
-            pose.pose.position = G2
-        elif d3 <= d1 and d3 <= d2 and d3 <= d4:
-            rospy.loginfo("G3")
-            pose.pose.position = G3
-        else:
-            rospy.loginfo("G4")
-            pose.pose.position = G4
+        curr_dist = math.inf
+        for p in self.create_all_candidate_points(B, vector_angle, vector_length):
+            d = dist(p, center)
+            if d < curr_dist:
+                curr_dist = d
+                pose.pose.position = p
 
         q = quaternion_from_euler(0, 0, angle)
         pose.pose.orientation = Quaternion(*q)

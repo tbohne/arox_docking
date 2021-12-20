@@ -436,7 +436,7 @@ class AlignRobotToChargingStation(smach.State):
         twist = Twist()
         twist.linear.x = -3.0
         rate = rospy.Rate(4)
-        for _ in range(4):
+        for _ in range(3):
             self.cmd_vel_pub.publish(twist)
             rate.sleep()
 
