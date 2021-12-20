@@ -10,6 +10,7 @@ from arox_docking.util import transform_pose, dist
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav_msgs.msg import Odometry
+from arox_docking.msg import PointArray
 from tf.transformations import quaternion_from_euler
 from arox_docking import config
 import numpy as np
@@ -25,6 +26,7 @@ class LocalizationServer:
     def __init__(self):
         self.server = actionlib.SimpleActionServer('localize_charging_station', LocalizeAction, self.execute, False)
         self.station_pub = rospy.Publisher("/publish_charger", Point, queue_size=1)
+        self.corner_pub = rospy.Publisher("/publish_corners", PointArray, queue_size=1)
         self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
         self.robot_pos = None
         self.pose_sub = None
@@ -62,14 +64,12 @@ class LocalizationServer:
 
         :param first_corner: first corner of the container entry
         :param second_corner: second corner of the container entry
+        :param center: center of the container
         :return: relative pose
         """
         pose = PoseStamped()
         pose.header.frame_id = "base_link"
         pose.header.stamp = rospy.Time.now()
-
-        # pose.pose.position.x = (self.robot_pos.x + second_corner.x + first_corner.x) / 3
-        # pose.pose.position.y = (self.robot_pos.y + second_corner.y + first_corner.y) / 3
 
         ############### charger pose #################
         charger = PoseStamped()
@@ -115,42 +115,40 @@ class LocalizationServer:
         P.x = (A.x + B.x) / 2
         P.y = (A.y + B.y) / 2
 
-        BA = (A.x - B.x, A.y - B.y)
-        PC = (center.x - P.x, center.y - P.y)
-
-        BA_length = np.sqrt(BA[0] ** 2 + BA[1] ** 2)
-        BA_res = (BA[0] / BA_length, BA[1] / BA_length)
-
-        PC_length = np.sqrt(PC[0] ** 2 + PC[1] ** 2)
-        PC_res = (PC[0] / PC_length, PC[1] / PC_length)
+        LENGTH = math.sqrt(config.CHARGING_STATION_POS_X ** 2 + config.CHARGING_STATION_POS_Y ** 2)
+        ANG = math.atan(config.CHARGING_STATION_POS_X / config.CHARGING_STATION_POS_Y)
 
         G1 = Point()
-        G1.x = B.x + BA_res[0] * config.CHARGING_STATION_POS_X * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
-        G1.y = B.y + PC_res[1] * config.CHARGING_STATION_POS_Y * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+        G1.x = B.x + math.cos(ANG) * LENGTH
+        G1.y = B.y + math.sin(ANG) * LENGTH
 
         G2 = Point()
-        G2.x = B.x - BA_res[0] * config.CHARGING_STATION_POS_X * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
-        G2.y = B.y - PC_res[1] * config.CHARGING_STATION_POS_Y * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+        G2.x = B.x - math.cos(ANG) * LENGTH
+        G2.y = B.y - math.sin(ANG) * LENGTH
 
         G3 = Point()
-        G3.x = B.x + BA_res[0] * config.CHARGING_STATION_POS_X * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
-        G3.y = B.y - PC_res[1] * config.CHARGING_STATION_POS_Y * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+        G3.x = B.x + math.cos(ANG) * LENGTH
+        G3.y = B.y - math.sin(ANG) * LENGTH
 
         G4 = Point()
-        G4.x = B.x - BA_res[0] * config.CHARGING_STATION_POS_X * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
-        G4.y = B.y + PC_res[1] * config.CHARGING_STATION_POS_Y * (config.CONTAINER_WIDTH + config.CONTAINER_LENGTH)
+        G4.x = B.x - math.cos(ANG) * LENGTH
+        G4.y = B.y + math.sin(ANG) * LENGTH
 
         d1 = dist(G1, center)
         d2 = dist(G2, center)
         d3 = dist(G3, center)
         d4 = dist(G4, center)
         if d1 <= d2 and d1 <= d3 and d1 <= d4:
+            rospy.loginfo("G1")
             pose.pose.position = G1
         elif d2 <= d1 and d2 <= d3 and d2 <= d4:
+            rospy.loginfo("G2")
             pose.pose.position = G2
         elif d3 <= d1 and d3 <= d2 and d3 <= d4:
+            rospy.loginfo("G3")
             pose.pose.position = G3
         else:
+            rospy.loginfo("G4")
             pose.pose.position = G4
 
         q = quaternion_from_euler(0, 0, angle)
