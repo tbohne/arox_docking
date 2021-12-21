@@ -101,14 +101,16 @@ class DetectContainer(smach.State):
         res = client.get_result().corners
         if res:
             base_point, container_entry = self.determine_container_entry(res)
-            angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
-            pose = PoseStamped()
-            pose.pose.position = container_entry
-            q = quaternion_from_euler(0, 0, angle)
-            pose.pose.orientation = Quaternion(*q)
-            self.entry_pub.publish(pose)
-            userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
-            return 'succeeded'
+            if base_point is not None and container_entry is not None:
+                angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
+                pose = PoseStamped()
+                pose.pose.position = container_entry
+                q = quaternion_from_euler(0, 0, angle)
+                pose.pose.orientation = Quaternion(*q)
+                self.entry_pub.publish(pose)
+                userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
+                return 'succeeded'
+
         return 'aborted'
 
     def determine_container_entry(self, points):
@@ -125,6 +127,17 @@ class DetectContainer(smach.State):
         first = sec = None
 
         if len(corners) == 2:
+            corner_dist = dist(self.robot_pose.position, corners[0])
+            avg_dists = [dist(self.robot_pose.position, p) for p in avg_points]
+            for d in avg_dists:
+                if corner_dist - d > CONTAINER_WIDTH / 2:
+                    rospy.loginfo("##############################################")
+                    rospy.loginfo("##############################################")
+                    rospy.loginfo("detected wrong, i.e. closed, side of the container as entry..")
+                    rospy.loginfo("##############################################")
+                    rospy.loginfo("##############################################")
+                    return None, None
+
             first, sec = corners
         elif len(corners) == 4:
             first = corners[0]
@@ -190,7 +203,7 @@ class AlignRobotToRamp(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['align_robot_to_ramp_input'],
-                             output_keys=['align_robot_to_ramp_output'])
+                             output_keys=['align_robot_to_ramp_output', 'sm_output'])
 
         self.entry_pub = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
 
@@ -220,26 +233,16 @@ class AlignRobotToRamp(smach.State):
             move_base_client.send_goal(goal)
             rospy.loginfo("now waiting...")
             move_base_client.wait_for_result()
+
+            # TODO: add error treatment for mbf failures
+
             #rospy.loginfo("result: %s", move_base_client.get_result())
             # rospy.loginfo("sleeping for 5s...")
             # rospy.sleep(5)
             # clear arrow maker
-            #rec_client = actionlib.SimpleActionClient("move_base_flex/recovery",RecoveryAction)
-            #rec_client.wait_for_server()
-            #ra_1 = RecoveryGoal('rotate_recovery',2)
-            #ra_2 = RecoveryGoal('clear_costmap',2)
-     
-            #rec_client.send_goal(ra_1)
-            #rospy.loginfo("rotating...")
-            #ra_1_res=rec_client.wait_for_result()
-            #if ra_1_res:
-            #    rec_client.send_goal(ra_2)
-            #    rospy.loginfo("clear costmap...")
-            #    rec_client.wait_for_result()
-
-            #rospy.loginfo("Done recovery...")
-            #self.entry_pub.publish(PoseStamped())
-            #return 'succeeded'
+            self.entry_pub.publish(PoseStamped())
+            return 'succeeded'
+        userdata.sm_output = get_failure_msg()
         return 'aborted'
 
 
@@ -251,7 +254,7 @@ class DriveIntoContainer(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['drive_into_container_input'],
-                             output_keys=['drive_into_container_output'])
+                             output_keys=['drive_into_container_output', 'sm_output'])
 
         self.robot_pose = None
         self.pose_sub = rospy.Subscriber("/odometry/filtered_map", Odometry, self.odom_callback, queue_size=1)
@@ -340,8 +343,11 @@ class DriveIntoContainer(smach.State):
                     sec_pose = transform_pose(TF_BUFFER, sec_pose, "map")
 
                     rospy.loginfo("DRIVING INTO CONTAINER..")
-
-                    if self.drive_in(center_res):
+                    drive = None
+                    while drive == None or drive == 'retry':
+                        drive = self.drive_in(center_res)
+                    
+                    if drive == 'success': 
                         # transform back to the new 'base_link'
                         first_pose = transform_pose(TF_BUFFER, first_pose, "base_link")
                         sec_pose = transform_pose(TF_BUFFER, sec_pose, "base_link")
@@ -353,9 +359,9 @@ class DriveIntoContainer(smach.State):
                         userdata.drive_into_container_output = [first, sec]
                         return 'succeeded'
 
-                    userdata.drive_into_container_output = get_failure_msg()
+                    userdata.sm_output = get_failure_msg()
                     return 'aborted'
-        userdata.drive_into_container_output = get_failure_msg()
+        userdata.sm_output = get_failure_msg()
         return 'aborted'
 
     @staticmethod
@@ -381,8 +387,8 @@ class DriveIntoContainer(smach.State):
         out = move_base_client.get_result().outcome
         if out == MBF_FAILURE or out == MBF_PAT_EXCEEDED:
             rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
-            return False
-        return True
+            return 'retry'
+        return 'success'
 
     @staticmethod
     def compute_center(center_point, angle):
@@ -408,7 +414,7 @@ class LocalizeChargingStation(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['localize_charging_station_input'],
-                             output_keys=['localize_charging_station_output'])
+                             output_keys=['localize_charging_station_output', 'sm_output'])
 
     @staticmethod
     def execute(userdata):
@@ -425,6 +431,7 @@ class LocalizeChargingStation(smach.State):
         # empty res
         if res.pose.position.x == 0 and res.pose.position.y == 0 and res.pose.position.z == 0:
             userdata.localize_charging_station_output = get_failure_msg()
+            userdata.sm_output = get_failure_msg()
             return 'aborted'
 
         rospy.loginfo("DETECTED CHARGING STATION..")
@@ -437,7 +444,7 @@ class AlignRobotToChargingStation(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
                              input_keys=['align_robot_to_charging_station_input'],
-                             output_keys=['align_robot_to_charging_station_output'])
+                             output_keys=['align_robot_to_charging_station_output', 'sm_output'])
 
         self.cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
 
@@ -471,6 +478,7 @@ class AlignRobotToChargingStation(smach.State):
 
         if move_base_client.get_result().outcome == MBF_FAILURE:
             rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
+            userdata.sm_output = move_base_client.get_goal_status_text()
             return 'aborted'
 
         self.move_backwards_to_wall()
@@ -507,7 +515,7 @@ class DockingStateMachine(smach.StateMachine):
 
         with self:
             self.add('CONTAINER_PROXIMITY', ContainerProximity(), transitions={
-                'succeeded': 'DRIVE_INTO_CONTAINER',
+                'succeeded': 'DETECT_CONTAINER',
                 'aborted': 'failed'})
 
             self.add('DETECT_CONTAINER', DetectContainer(),
