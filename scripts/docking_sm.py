@@ -8,8 +8,7 @@ import smach
 import smach_ros
 import tf2_ros
 from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, MBF_PAT_EXCEEDED, \
-    DETECTION_ATTEMPTS
-
+    DETECTION_ATTEMPTS, CHARGING_STATION_POS_X, CHARGING_STATION_POS_Y
 from arox_docking.msg import DockAction, DetectAction, DetectGoal, LocalizeGoal, LocalizeAction
 from arox_docking.util import dist, transform_pose, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Twist
@@ -110,7 +109,6 @@ class DetectContainer(smach.State):
                 self.entry_pub.publish(pose)
                 userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
                 return 'succeeded'
-
         return 'aborted'
 
     def determine_container_entry(self, points):
@@ -338,9 +336,11 @@ class DriveIntoContainer(smach.State):
                     first, sec = self.compute_entry_from_four_corners(container_corners)
                     first_pose = self.get_pose_from_point(first)
                     sec_pose = self.get_pose_from_point(sec)
+                    center_pose = self.get_pose_from_point(center)
                     # transform poses to 'map' before driving in with mbf (would impair precision)
                     first_pose = transform_pose(TF_BUFFER, first_pose, "map")
                     sec_pose = transform_pose(TF_BUFFER, sec_pose, "map")
+                    center_pose = transform_pose(TF_BUFFER, center_pose, "map")
 
                     rospy.loginfo("DRIVING INTO CONTAINER..")
                     drive = None
@@ -351,12 +351,14 @@ class DriveIntoContainer(smach.State):
                         # transform back to the new 'base_link'
                         first_pose = transform_pose(TF_BUFFER, first_pose, "base_link")
                         sec_pose = transform_pose(TF_BUFFER, sec_pose, "base_link")
+                        center_pose = transform_pose(TF_BUFFER, center_pose, "base_link")
                         first = Point(first_pose.pose.position.x, first_pose.pose.position.y, 0)
                         sec = Point(sec_pose.pose.position.x, sec_pose.pose.position.y, 0)
+                        center = Point(center_pose.pose.position.x, center_pose.pose.position.y, 0)
                         # clear marker
                         self.center_pub.publish(Point())
                         # pass the detected entry corners to the next state
-                        userdata.drive_into_container_output = [first, sec]
+                        userdata.drive_into_container_output = [first, sec, center]
                         return 'succeeded'
 
                     userdata.sm_output = get_failure_msg()
