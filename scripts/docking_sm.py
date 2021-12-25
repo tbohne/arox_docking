@@ -44,18 +44,21 @@ class ContainerProximity(smach.State):
         rec_client = actionlib.SimpleActionClient("move_base_flex/recovery",RecoveryAction)
         rec_client.wait_for_server()
         #ra_1 = RecoveryGoal('rotate_recovery',2)
+        ra_1 = RecoveryGoal('clear_costmap',3)
         ra_2 = RecoveryGoal('clear_costmap',2)
      
-        #rec_client.send_goal(ra_1)
-        #rospy.loginfo("rotating...")
-        #ra_1_res=rec_client.wait_for_result()
-        #if ra_1_res:
-        rec_client.send_goal(ra_2)
-        rospy.loginfo("clear costmap...")
-        rec_client.wait_for_result()
-
-        rospy.loginfo("Done recovery...")
-        return 'succeeded'
+        rec_client.send_goal(ra_1)
+        rospy.loginfo("clear_costmap_1...")
+        ra_1_res=rec_client.wait_for_result()
+        rospy.sleep(3)
+        if ra_1_res:
+            rec_client.send_goal(ra_2)
+            rospy.loginfo("clear costmap_2...")
+            ra_2_res = rec_client.wait_for_result()
+            rospy.sleep(3)
+            if ra_2_res:
+                rospy.loginfo("Done recovery...")
+                return 'succeeded'
 
 
 class DetectContainer(smach.State):
