@@ -238,7 +238,7 @@ class DriveIntoContainer(smach.State):
                              output_keys=['drive_into_container_output', 'sm_output'])
 
         self.robot_pose = None
-        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
+        self.pose_sub = rospy.Subscriber("/odometry/gps", Odometry, self.odom_callback, queue_size=1)
         self.center_pub = rospy.Publisher("/publish_center", Point, queue_size=1)
         self.cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
         self.init_pose = None
@@ -264,9 +264,7 @@ class DriveIntoContainer(smach.State):
         pose.header.frame_id = odom.header.frame_id
         pose.pose = odom.pose.pose
         pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
-        self.robot_pose = pose_stamped.pose
-        if self.init_pose is None:
-            self.init_pose = pose_stamped.pose
+        self.robot_pose = pose_stamped
 
     def compute_entry_from_four_corners(self, container_corners):
         """
@@ -277,9 +275,9 @@ class DriveIntoContainer(smach.State):
         """
         # find the closest corner
         first = container_corners[0]
-        curr_min = dist(self.robot_pose.position, first)
+        curr_min = dist(self.robot_pose.pose.position, first)
         for i in range(1, len(container_corners)):
-            d = dist(container_corners[i], self.robot_pose.position)
+            d = dist(container_corners[i], self.robot_pose.pose.position)
             if d < curr_min:
                 first = container_corners[i]
                 curr_min = d
@@ -309,6 +307,7 @@ class DriveIntoContainer(smach.State):
         :return: outcome of the execution (success / failure)
         """
         rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
+        self.init_pose = transform_pose(TF_BUFFER, self.robot_pose, "map")
 
         for _ in range(DETECTION_ATTEMPTS):
             client = actionlib.SimpleActionClient('detect_container', DetectAction)
@@ -327,7 +326,7 @@ class DriveIntoContainer(smach.State):
                 center.y = np.average([p.y for p in container_corners])
 
                 self.center_pub.publish(center)
-                angle = math.atan2(self.robot_pose.position.y - center.y, self.robot_pose.position.x - center.x)
+                angle = math.atan2(self.robot_pose.pose.position.y - center.y, self.robot_pose.pose.position.x - center.x)
                 center_res = self.compute_center(center, angle)
 
                 if center_res:
@@ -342,7 +341,7 @@ class DriveIntoContainer(smach.State):
 
                     rospy.loginfo("DRIVING INTO CONTAINER..")
 
-                    if self.drive_to(center_res):
+                    if self.drive_to(center_res, False):
                         # transform back to the new 'base_link'
                         first_pose = transform_pose(TF_BUFFER, first_pose, "base_link")
                         sec_pose = transform_pose(TF_BUFFER, sec_pose, "base_link")
@@ -358,7 +357,7 @@ class DriveIntoContainer(smach.State):
 
                     userdata.sm_output = get_failure_msg()
                     rospy.loginfo("not able to drive to center - realign in front of ramp before trying again..")
-                    self.drive_to(self.init_pose)
+                    self.drive_to(self.init_pose, True)
                     return 'aborted'
 
         rospy.loginfo("failed to detect container corners -> moving back and forth before trying again..")
@@ -367,7 +366,7 @@ class DriveIntoContainer(smach.State):
         return 'aborted'
 
     @staticmethod
-    def drive_to(pose):
+    def drive_to(pose, map_frame):
         """
         Drives the robot to the specified pose.
 
@@ -380,7 +379,8 @@ class DriveIntoContainer(smach.State):
         goal = MoveBaseGoal()
         goal.target_pose = pose
         goal.target_pose.header.stamp = rospy.Time.now()
-        goal.target_pose = transform_pose(TF_BUFFER, goal.target_pose, 'map')
+        if not map_frame:
+            goal.target_pose = transform_pose(TF_BUFFER, goal.target_pose, 'map')
 
         move_base_client.send_goal(goal)
         rospy.loginfo("now waiting...")
