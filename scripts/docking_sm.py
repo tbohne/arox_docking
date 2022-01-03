@@ -241,6 +241,7 @@ class DriveIntoContainer(smach.State):
         self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
         self.center_pub = rospy.Publisher("/publish_center", Point, queue_size=1)
         self.cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
+        self.init_pose = None
 
     def move_back_and_forth(self):
         rospy.loginfo("moving robot back and forth..")
@@ -264,6 +265,8 @@ class DriveIntoContainer(smach.State):
         pose.pose = odom.pose.pose
         pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
         self.robot_pose = pose_stamped.pose
+        if self.init_pose is None:
+            self.init_pose = pose_stamped.pose
 
     def compute_entry_from_four_corners(self, container_corners):
         """
@@ -339,7 +342,7 @@ class DriveIntoContainer(smach.State):
 
                     rospy.loginfo("DRIVING INTO CONTAINER..")
 
-                    if self.drive_in(center_res):
+                    if self.drive_to(center_res):
                         # transform back to the new 'base_link'
                         first_pose = transform_pose(TF_BUFFER, first_pose, "base_link")
                         sec_pose = transform_pose(TF_BUFFER, sec_pose, "base_link")
@@ -354,7 +357,8 @@ class DriveIntoContainer(smach.State):
                         return 'succeeded'
 
                     userdata.sm_output = get_failure_msg()
-                    rospy.loginfo("345: returning aborted..")
+                    rospy.loginfo("not able to drive to center - realign in front of ramp before trying again..")
+                    self.drive_to(self.init_pose)
                     return 'aborted'
 
         rospy.loginfo("failed to detect container corners -> moving back and forth before trying again..")
@@ -363,18 +367,18 @@ class DriveIntoContainer(smach.State):
         return 'aborted'
 
     @staticmethod
-    def drive_in(center_pos):
+    def drive_to(pose):
         """
-        Drives the robot to the specified center position inside the container.
+        Drives the robot to the specified pose.
 
-        :param center_pos: goal position at the center of the container
+        :param pose: goal pose (at the center of the container)
         :return: true if successful, false otherwise
         """
         move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
         move_base_client.wait_for_server()
 
         goal = MoveBaseGoal()
-        goal.target_pose = center_pos
+        goal.target_pose = pose
         goal.target_pose.header.stamp = rospy.Time.now()
         goal.target_pose = transform_pose(TF_BUFFER, goal.target_pose, 'map')
 
@@ -384,8 +388,7 @@ class DriveIntoContainer(smach.State):
 
         out = move_base_client.get_result().outcome
         if out == MBF_FAILURE or out == MBF_PAT_EXCEEDED:
-            rospy.loginfo("failed in 372..")
-            rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
+            rospy.loginfo("DRIVE_INTO_CONTAINER - navigation failed: %s", move_base_client.get_goal_status_text())
             return False
         return True
 
