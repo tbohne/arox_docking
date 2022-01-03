@@ -57,6 +57,8 @@ class DetectionServer:
 
         :param goal: goal to be performed (dummy atm)
         """
+        # sleep a moment in order to actually use the latest laser scan input (after movement)
+        rospy.sleep(1)
         self.reset()
         result = DetectResult()
 
