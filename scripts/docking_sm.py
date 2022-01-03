@@ -240,6 +240,18 @@ class DriveIntoContainer(smach.State):
         self.robot_pose = None
         self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
         self.center_pub = rospy.Publisher("/publish_center", Point, queue_size=1)
+        self.cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
+
+    def move_back_and_forth(self):
+        rospy.loginfo("moving robot back and forth..")
+        twist = Twist()
+        twist.linear.x = -3.0
+        rate = rospy.Rate(4)
+        for _ in range(2):
+            for _ in range(3):
+                self.cmd_vel_pub.publish(twist)
+                rate.sleep()
+            twist.linear.x = 3.0
 
     def odom_callback(self, odom):
         """
@@ -342,7 +354,11 @@ class DriveIntoContainer(smach.State):
                         return 'succeeded'
 
                     userdata.sm_output = get_failure_msg()
+                    rospy.loginfo("345: returning aborted..")
                     return 'aborted'
+
+        rospy.loginfo("failed to detect container corners -> moving back and forth before trying again..")
+        self.move_back_and_forth()
         userdata.sm_output = get_failure_msg()
         return 'aborted'
 
@@ -368,6 +384,7 @@ class DriveIntoContainer(smach.State):
 
         out = move_base_client.get_result().outcome
         if out == MBF_FAILURE or out == MBF_PAT_EXCEEDED:
+            rospy.loginfo("failed in 372..")
             rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
             return False
         return True
@@ -512,7 +529,7 @@ class DockingStateMachine(smach.StateMachine):
 
             self.add('DRIVE_INTO_CONTAINER', DriveIntoContainer(),
                      transitions={'succeeded': 'LOCALIZE_CHARGING_STATION',
-                                  'aborted': 'failed'},
+                                  'aborted': 'DRIVE_INTO_CONTAINER'},
                      remapping={'drive_into_container_output': 'sm_input'})
 
             self.add('LOCALIZE_CHARGING_STATION', LocalizeChargingStation(),
