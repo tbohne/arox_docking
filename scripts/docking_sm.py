@@ -53,7 +53,7 @@ class DetectContainer(smach.State):
 
         self.entry_pub = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
         self.robot_pose = None
-        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
+        rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
 
     def odom_callback(self, odom):
         """
@@ -238,7 +238,7 @@ class DriveIntoContainer(smach.State):
                              output_keys=['drive_into_container_output', 'sm_output'])
 
         self.robot_pose = None
-        self.pose_sub = rospy.Subscriber("/odometry/gps", Odometry, self.odom_callback, queue_size=1)
+        rospy.Subscriber("/odometry/gps", Odometry, self.odom_callback, queue_size=1)
         self.center_pub = rospy.Publisher("/publish_center", Point, queue_size=1)
         self.cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
         self.init_pose = None
@@ -448,7 +448,22 @@ class AlignRobotToChargingStation(smach.State):
                              input_keys=['align_robot_to_charging_station_input'],
                              output_keys=['align_robot_to_charging_station_output', 'sm_output'])
 
+        rospy.Subscriber("/odometry/gps", Odometry, self.odom_callback, queue_size=1)
         self.cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
+        self.robot_pose = None
+        self.init_pose = None
+
+    def odom_callback(self, odom):
+        """
+        Is called whenever new odometry data arrives.
+
+        :param odom: odometry data to update robot pos with
+        """
+        pose = PoseStamped()
+        pose.header.frame_id = odom.header.frame_id
+        pose.pose = odom.pose.pose
+        pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
+        self.robot_pose = pose_stamped
 
     def move_backwards_to_wall(self):
         rospy.loginfo("moving backwards to wall..")
@@ -460,9 +475,7 @@ class AlignRobotToChargingStation(smach.State):
             self.cmd_vel_pub.publish(twist)
             rate.sleep()
 
-    def execute(self, userdata):
-        rospy.loginfo('executing state ALIGN_ROBOT_TO_CHARGING_STATION')
-
+    def drive_to(self, pose):
         move_base_client = actionlib.SimpleActionClient("move_base_flex/move_base", MoveBaseAction)
         move_base_client.wait_for_server()
 
@@ -470,17 +483,24 @@ class AlignRobotToChargingStation(smach.State):
         goal.target_pose.header.frame_id = "map"
         goal.target_pose.header.stamp = rospy.Time.now()
 
-        charging_station_pose = userdata.align_robot_to_charging_station_input
+        charging_station_pose = pose
         goal.target_pose.pose.position = charging_station_pose.pose.position
         goal.target_pose.pose.orientation = charging_station_pose.pose.orientation
 
         move_base_client.send_goal(goal)
         rospy.loginfo("now waiting...")
         move_base_client.wait_for_result()
+        return move_base_client.get_result().outcome
 
-        if move_base_client.get_result().outcome == MBF_FAILURE:
-            rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
-            userdata.sm_output = move_base_client.get_goal_status_text()
+    def execute(self, userdata):
+        rospy.loginfo('executing state ALIGN_ROBOT_TO_CHARGING_STATION')
+        self.init_pose = transform_pose(TF_BUFFER, self.robot_pose, "map")
+
+        out = self.drive_to(userdata.align_robot_to_charging_station_input)
+        if out == MBF_FAILURE or out == MBF_PAT_EXCEEDED:
+            rospy.loginfo("ALIGN_TO_CHARGING_STATION failed - driving back to center and retry")
+            userdata.sm_output = "ALIGN_TO_CHARGING_STATION failed"
+            self.drive_to(self.init_pose)
             return 'aborted'
 
         self.move_backwards_to_wall()
@@ -541,7 +561,7 @@ class DockingStateMachine(smach.StateMachine):
                                 'localize_charging_station_output': 'sm_input'})
 
             self.add('ALIGN_ROBOT_TO_CHARGING_STATION', AlignRobotToChargingStation(),
-                     transitions={'succeeded': 'DOCK', 'aborted': 'failed'},
+                     transitions={'succeeded': 'DOCK', 'aborted': 'ALIGN_ROBOT_TO_CHARGING_STATION'},
                      remapping={'align_robot_to_charging_station_input': 'sm_input'})
 
             self.add('DOCK', Dock(),
