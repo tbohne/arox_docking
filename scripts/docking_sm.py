@@ -341,7 +341,7 @@ class DriveIntoContainer(smach.State):
 
                     rospy.loginfo("DRIVING INTO CONTAINER..")
 
-                    if self.drive_to(center_res, False):
+                    if self.drive_to(center_res):
                         # transform back to the new 'base_link'
                         first_pose = transform_pose(TF_BUFFER, first_pose, "base_link")
                         sec_pose = transform_pose(TF_BUFFER, sec_pose, "base_link")
@@ -357,7 +357,7 @@ class DriveIntoContainer(smach.State):
 
                     userdata.sm_output = get_failure_msg()
                     rospy.loginfo("not able to drive to center - realign in front of ramp before trying again..")
-                    self.drive_to(self.init_pose, True)
+                    self.drive_to(self.init_pose)
                     return 'aborted'
 
         rospy.loginfo("failed to detect container corners -> moving back and forth before trying again..")
@@ -366,7 +366,7 @@ class DriveIntoContainer(smach.State):
         return 'aborted'
 
     @staticmethod
-    def drive_to(pose, map_frame):
+    def drive_to(pose):
         """
         Drives the robot to the specified pose.
 
@@ -379,7 +379,7 @@ class DriveIntoContainer(smach.State):
         goal = MoveBaseGoal()
         goal.target_pose = pose
         goal.target_pose.header.stamp = rospy.Time.now()
-        if not map_frame:
+        if pose.header.frame_id != "map":
             goal.target_pose = transform_pose(TF_BUFFER, goal.target_pose, 'map')
 
         move_base_client.send_goal(goal)
