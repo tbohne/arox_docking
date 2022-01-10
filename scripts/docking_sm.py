@@ -47,7 +47,7 @@ class DetectContainer(smach.State):
     """
 
     def __init__(self):
-        smach.State.__init__(self, outcomes=['succeeded', 'aborted'],
+        smach.State.__init__(self, outcomes=['succeeded_two_corners', 'succeeded_four_corners', 'aborted'],
                              input_keys=['detect_container_input'],
                              output_keys=['detect_container_output'])
 
@@ -82,6 +82,15 @@ class DetectContainer(smach.State):
         client.wait_for_result()
         res = client.get_result().corners
         if res:
+            corners = res[:int(len(res) / 2)]
+            # already detected whole container
+            if len(corners) == 4:
+                userdata.detect_container_output = res
+                rospy.loginfo("already detected all four corners of the container..")
+                rospy.loginfo("--> skip state 'ALIGN_ROBOT_TO_RAMP' and move directly into it..")
+                return 'succeeded_four_corners'
+
+            # only detected entry
             base_point, container_entry = self.determine_container_entry(res)
             if base_point is not None and container_entry is not None:
                 angle = math.atan2(base_point.y - container_entry.y, base_point.x - container_entry.x)
@@ -91,7 +100,7 @@ class DetectContainer(smach.State):
                 pose.pose.orientation = Quaternion(*q)
                 self.entry_pub.publish(pose)
                 userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
-                return 'succeeded'
+                return 'succeeded_two_corners'
         return 'aborted'
 
     def determine_container_entry(self, points):
@@ -222,6 +231,7 @@ class AlignRobotToRamp(smach.State):
             # rospy.sleep(5)
             # clear arrow maker
             self.entry_pub.publish(PoseStamped())
+            userdata.align_robot_to_ramp_output = None
             return 'succeeded'
         userdata.sm_output = get_failure_msg()
         return 'aborted'
@@ -310,12 +320,16 @@ class DriveIntoContainer(smach.State):
         self.init_pose = transform_pose(TF_BUFFER, self.robot_pose, "map")
 
         for _ in range(DETECTION_ATTEMPTS):
-            client = actionlib.SimpleActionClient('detect_container', DetectAction)
-            client.wait_for_server()
-            goal = DetectGoal()
-            client.send_goal(goal)
-            client.wait_for_result()
-            res = client.get_result().corners
+            # complete container already detected in previous state - no need to detect it again
+            if userdata.drive_into_container_input:
+                res = userdata.drive_into_container_input
+            else:
+                client = actionlib.SimpleActionClient('detect_container', DetectAction)
+                client.wait_for_server()
+                goal = DetectGoal()
+                client.send_goal(goal)
+                client.wait_for_result()
+                res = client.get_result().corners
 
             # 4 corners + 4 avg points
             if res and len(res) == 8:
@@ -541,19 +555,22 @@ class DockingStateMachine(smach.StateMachine):
                 'aborted': 'failed'})
 
             self.add('DETECT_CONTAINER', DetectContainer(),
-                     transitions={'succeeded': 'ALIGN_ROBOT_TO_RAMP',
+                     transitions={'succeeded_two_corners': 'ALIGN_ROBOT_TO_RAMP',
+                                  'succeeded_four_corners': 'DRIVE_INTO_CONTAINER',
                                   'aborted': 'DETECT_CONTAINER'},
                      remapping={'detect_container_output': 'sm_input'})
 
             self.add('ALIGN_ROBOT_TO_RAMP', AlignRobotToRamp(),
                      transitions={'succeeded': 'DRIVE_INTO_CONTAINER',
                                   'aborted': 'failed'},
-                     remapping={'align_robot_to_ramp_input': 'sm_input'})
+                     remapping={'align_robot_to_ramp_input': 'sm_input',
+                                'align_robot_to_ramp_output': 'sm_input'})
 
             self.add('DRIVE_INTO_CONTAINER', DriveIntoContainer(),
                      transitions={'succeeded': 'LOCALIZE_CHARGING_STATION',
                                   'aborted': 'DRIVE_INTO_CONTAINER'},
-                     remapping={'drive_into_container_output': 'sm_input'})
+                     remapping={'drive_into_container_input': 'sm_input',
+                                'drive_into_container_output': 'sm_input'})
 
             self.add('LOCALIZE_CHARGING_STATION', LocalizeChargingStation(),
                      transitions={'succeeded': 'ALIGN_ROBOT_TO_CHARGING_STATION', 'aborted': 'failed'},
