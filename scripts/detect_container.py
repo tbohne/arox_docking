@@ -23,27 +23,13 @@ class DetectionServer:
     def __init__(self):
         self.server = actionlib.SimpleActionServer('detect_container', DetectAction, self.execute, False)
         self.server.start()
-        self.scan_sub = None
         self.pose_sub = None
         self.line_pub = None
         self.corner_pub = None
         self.dbg_pub = None
         self.clear_pub = None
         self.corners = None
-        self.detecting = False
         self.robot_pos = None
-
-    def reset(self):
-        """
-        Resets detection related values and initializes publishers and subscribers.
-        """
-        # reset detected corners
-        self.corners = None
-        self.detecting = False
-        # subscribe to the scan that is the result of 'pointcloud_to_laserscan'
-        self.scan_sub = rospy.Subscriber("/scanVelodyneFrame", LaserScan, self.scan_callback, queue_size=1)
-        # subscribe to robot pose
-        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
 
         # publishers for debugging markers (visualizations)
         self.line_pub = rospy.Publisher("/publish_lines", PointArray, queue_size=1)
@@ -51,34 +37,90 @@ class DetectionServer:
         self.dbg_pub = rospy.Publisher("/publish_dbg", PointArray, queue_size=1)
         self.clear_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
+    def reset(self):
+        """
+        Resets detection related values and initializes publishers and subscribers.
+        """
+        # reset detected corners
+        self.corners = None
+        # subscribe to robot pose
+        self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
+
     def execute(self, goal):
         """
         Executes the action server.
 
         :param goal: goal to be performed (dummy atm)
         """
-        # sleep a moment in order to actually use the latest laser scan input (after movement)
-        rospy.sleep(1)
         self.reset()
         result = DetectResult()
+        scan = None
 
-        # give it some time to detect the container, but check after every CHECK_FREQUENCY whether it's done
-        for i in range(int(config.TIME_LIMIT / config.CHECK_FREQUENCY)):
-            if self.corners:
-                break
-            rospy.sleep(config.CHECK_FREQUENCY)
+        if goal.scan_mode == "full":
+            try:
+                # create a new subscription to the topic, receive one message, then unsubscribe
+                scan = rospy.wait_for_message("/scanVelodyneFrame", LaserScan, timeout=10)
+                rospy.loginfo("performing container detection on full laser scan [-100, 100]")
+            except rospy.ROSException as e:
+                rospy.loginfo("problem retrieving full laser scan: %s", e)
+        elif goal.scan_mode == "partial":
+            try:
+                # create a new subscription to the topic, receive one message, then unsubscribe
+                scan = rospy.wait_for_message("/scanVelodyneFramePartial", LaserScan, timeout=10)
+                rospy.loginfo("performing container detection on partial laser scan [-45, 45] -- already aligned in front of it")
+            except rospy.ROSException as e:
+                rospy.loginfo("problem retrieving partial laser scan: %s", e)
+        else:
+            rospy.loginfo("unknown scan mode: %s", goal.scan_mode)
+
+        self.prepare_container_detection(scan)
 
         if self.corners:
             rospy.loginfo("CORNER DETECTION SUCCEEDED..")
-            self.scan_sub.unregister()
             self.pose_sub.unregister()
             result.corners = self.corners
             self.server.set_succeeded(result)
         else:
             rospy.loginfo("CORNER DETECTION FAILED..")
-            self.scan_sub.unregister()
             self.pose_sub.unregister()
             self.server.set_aborted()
+
+    def prepare_container_detection(self, scan):
+        """
+        Computes the 2D hough transform of the laser scan and initiates the container detection.
+
+        :param scan: laser scan to detect container in
+        """
+        theta_values = np.deg2rad(
+            np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
+        r_values = np.arange(config.RADIUS_MIN, config.RADIUS_MAX, config.DELTA_RADIUS, dtype=np.double)
+        # precompute sines and cosines
+        cosines = np.cos(theta_values)
+        sines = np.sin(theta_values)
+        # define discrete hough space
+        hough_space = np.zeros([len(r_values), len(theta_values)], dtype=int)
+
+        # init dictionary for corresponding points
+        points = {}
+        for r in range(len(r_values)):
+            for theta in range(len(theta_values)):
+                points[(r, theta)] = []
+
+        # compute hough space
+        for p_idx, (x, y) in enumerate(get_points_from_scan(scan)):
+            if not np.isnan(x) and not np.isnan(y):
+                for theta_idx, (cos_theta, sin_theta) in enumerate(zip(cosines, sines)):
+                    r = x * cos_theta + y * sin_theta
+                    if r < config.RADIUS_MIN or r > config.RADIUS_MAX:
+                        continue
+                    r_idx = int((r - config.RADIUS_MIN) / config.DELTA_RADIUS)
+                    hough_space[r_idx][theta_idx] += 1
+                    p = Point()
+                    p.x = x
+                    p.y = y
+                    points[(r_idx, theta_idx)].append(p)
+
+        self.detect_container(hough_space, points)
 
     def line_dist_to_robot(self, point_list):
         """
@@ -103,8 +145,7 @@ class DetectionServer:
         base_attempts = 0
         tested_base_lines = []
 
-        while hough_space.max() >= config.LINE_LB and len(
-                tested_base_lines) < config.BASE_TEST_LIMIT and base_attempts < config.BASE_ATTEMPT_LIMIT:
+        while hough_space.max() >= config.LINE_LB and len(tested_base_lines) < config.BASE_TEST_LIMIT and base_attempts < config.BASE_ATTEMPT_LIMIT:
             # clear markers of previous detection run
             self.dbg_pub.publish([])
             self.line_pub.publish([])
@@ -195,51 +236,6 @@ class DetectionServer:
                         self.corners.append(p)
                 break
         rospy.loginfo("STOPPING - HOUGH MAX: %s, ACC_THRESH: %s", hough_space.max(), dynamic_acc_thresh_based_on_dist)
-        self.detecting = False
-
-    def scan_callback(self, scan):
-        """
-        Is called whenever a new laser scan arrives.
-        Computes the 2D hough transform of the laser scan and initiates the container detection.
-
-        :param scan: laser scan to detect container in
-        """
-        # rospy.loginfo("receiving laser scan..")
-        # rospy.loginfo("seq: %s", scan.header.seq)
-
-        # only detecting container if it's not already detected
-        if self.corners is None and not self.detecting:
-            self.detecting = True
-            theta_values = np.deg2rad(
-                np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
-            r_values = np.arange(config.RADIUS_MIN, config.RADIUS_MAX, config.DELTA_RADIUS, dtype=np.double)
-            # precompute sines and cosines
-            cosines = np.cos(theta_values)
-            sines = np.sin(theta_values)
-            # define discrete hough space
-            hough_space = np.zeros([len(r_values), len(theta_values)], dtype=int)
-
-            # init dictionary for corresponding points
-            points = {}
-            for r in range(len(r_values)):
-                for theta in range(len(theta_values)):
-                    points[(r, theta)] = []
-
-            # compute hough space
-            for p_idx, (x, y) in enumerate(get_points_from_scan(scan)):
-                if not np.isnan(x) and not np.isnan(y):
-                    for theta_idx, (cos_theta, sin_theta) in enumerate(zip(cosines, sines)):
-                        r = x * cos_theta + y * sin_theta
-                        if r < config.RADIUS_MIN or r > config.RADIUS_MAX:
-                            continue
-                        r_idx = int((r - config.RADIUS_MIN) / config.DELTA_RADIUS)
-                        hough_space[r_idx][theta_idx] += 1
-                        p = Point()
-                        p.x = x
-                        p.y = y
-                        points[(r_idx, theta_idx)].append(p)
-
-            self.detect_container(hough_space, points)
 
     def publish_detected_container(self, found_line_params):
         """

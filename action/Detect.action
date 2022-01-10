@@ -1,5 +1,5 @@
 # define the goal
-uint32 container_id
+string scan_mode
 ---
 # define the result
 geometry_msgs/Point[] corners

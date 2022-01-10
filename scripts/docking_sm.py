@@ -78,6 +78,8 @@ class DetectContainer(smach.State):
         client = actionlib.SimpleActionClient('detect_container', DetectAction)
         client.wait_for_server()
         goal = DetectGoal()
+        # robot is only expected to stand roughly in container proximity -> full scan required
+        goal.scan_mode = "full"
         client.send_goal(goal)
         client.wait_for_result()
         res = client.get_result().corners
@@ -327,6 +329,8 @@ class DriveIntoContainer(smach.State):
                 client = actionlib.SimpleActionClient('detect_container', DetectAction)
                 client.wait_for_server()
                 goal = DetectGoal()
+                # robot is expected to stand right in front of the container in this state -> partial scan
+                goal.scan_mode = "partial"
                 client.send_goal(goal)
                 client.wait_for_result()
                 res = client.get_result().corners
