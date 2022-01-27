@@ -387,10 +387,18 @@ Visualization Manager:
       Value: true
     - Class: rviz/Marker
       Enabled: true
+      Marker Topic: /docking/dbg_points_base
+      Name: BASE_MARKER
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
       Marker Topic: /docking/dbg_points
       Name: DBG_POINTS
       Namespaces:
-        {}
+        "": true
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -406,7 +414,7 @@ Visualization Manager:
       Marker Topic: /docking/hough_lines
       Name: HOUGH_LINES
       Namespaces:
-        {}
+        hough: true
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -461,7 +469,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 44.73981857299805
+      Distance: 35.188724517822266
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -469,9 +477,9 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 0.7770102620124817
-        Y: 34.25742721557617
-        Z: -0.0542437881231308
+        X: 0.41125965118408203
+        Y: 11.501182556152344
+        Z: -0.028683148324489594
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -479,7 +487,7 @@ Visualization Manager:
       Near Clip Distance: 0.009999999776482582
       Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
-      Yaw: 1.5004023313522339
+      Yaw: 1.4754000902175903
     Saved: ~
 Window Geometry:
   Displays:
