@@ -15,6 +15,7 @@ class Visualizer:
         self.outdoor_pub = rospy.Publisher("/docking/outdoor_marker", Marker, queue_size=1)
         self.entry_pub = rospy.Publisher("/docking/entry_point", Marker, queue_size=1)
         self.dbg_pub = rospy.Publisher("/docking/dbg_points", Marker, queue_size=1)
+        self.dbg_pub_base = rospy.Publisher("/docking/dbg_points_base", Marker, queue_size=1)
         self.charging_station_pub = rospy.Publisher("/docking/charging_station", Marker, queue_size=1)
 
         self.line_sub = rospy.Subscriber("/publish_lines", PointArray, self.publish_detected_lines, queue_size=1)
@@ -23,11 +24,13 @@ class Visualizer:
         self.outdoor_sub = rospy.Subscriber("/publish_outdoor", Point, self.publish_outdoor_marker, queue_size=1)
         self.entry_sub = rospy.Subscriber("/publish_entry", PoseStamped, self.publish_entry, queue_size=1)
         self.dbg_sub = rospy.Subscriber("/publish_dbg", PointArray, self.publish_dgb_points, queue_size=1)
+        rospy.Subscriber("/publish_dbg_base", PointArray, self.publish_dbg_point_base, queue_size=1)
         self.charging_station_sub = rospy.Subscriber("/publish_charger", Point, self.publish_charger, queue_size=1)
         self.clear_sub = rospy.Subscriber("/clear_markers", String, self.clear_markers, queue_size=1)
 
         self.line_marker = None
         self.dbg_marker = None
+        self.dbg_marker_base = None
         self.corner_marker = None
         self.center_marker = None
         self.outdoor_marker = None
@@ -74,13 +77,17 @@ class Visualizer:
         Initializes the debug points marker.
         """
         self.dbg_marker = Marker()
-        self.dbg_marker.header.frame_id = "base_link"
+        self.dbg_marker_base = Marker()
+        self.dbg_marker.header.frame_id = self.dbg_marker_base.header.frame_id = "base_link"
         self.dbg_marker.id = 1
-        self.dbg_marker.type = Marker.POINTS
-        self.dbg_marker.action = Marker.ADD
-        self.dbg_marker.pose.orientation.w = 1
+        self.dbg_marker_base.id = 2
+        self.dbg_marker.type = self.dbg_marker_base.type = Marker.POINTS
+        self.dbg_marker.action = self.dbg_marker_base.action = Marker.ADD
+        self.dbg_marker.pose.orientation.w = self.dbg_marker_base.pose.orientation.w = 1
         self.dbg_marker.scale.x = self.dbg_marker.scale.y = self.dbg_marker.scale.z = 0.08
+        self.dbg_marker_base.scale.x = self.dbg_marker_base.scale.y = self.dbg_marker_base.scale.z = 0.1
         self.dbg_marker.color.a = self.dbg_marker.color.b = self.dbg_marker.color.g = 1.0
+        self.dbg_marker_base.color.a = self.dbg_marker_base.color.r = self.dbg_marker_base.color.b = 1.0
 
     def publish_dgb_points(self, points):
         """
@@ -93,6 +100,13 @@ class Visualizer:
         else:
             self.dbg_marker.points.extend(points.points)
         self.dbg_pub.publish(self.dbg_marker)
+
+    def publish_dbg_point_base(self, points):
+        if len(points.points) == 0:
+            self.dbg_marker_base.points = []
+        else:
+            self.dbg_marker_base.points.extend(points.points)
+        self.dbg_pub_base.publish(self.dbg_marker_base)
 
     def init_corner_marker(self):
         """
