@@ -480,12 +480,15 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points, log):
 
     # TODO: perhaps not so useful
     reasonable_avg_distances = True  # config.CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
-    jumps = False  # detect_jumps(point_list)
+
+    # for the base line there should be no jumps
+    jumps = detect_jumps(point_list) if theta_base is None else False
 
     if log:
         rospy.loginfo("reasonable len: %s, len: %s", reasonable_len, max_dist)
         rospy.loginfo("reasonable dist: %s", reasonable_dist)
         rospy.loginfo("orthogonal to base: %s, diff: %s", orthogonal_to_base, diff)
+        rospy.loginfo("jumps: %s", jumps)
 
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and not jumps
 
