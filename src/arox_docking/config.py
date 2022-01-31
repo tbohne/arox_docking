@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 ########################## CONTAINER ##########################
-CONTAINER_WIDTH = 2.83
+CONTAINER_WIDTH = 2.55
 CONTAINER_LENGTH = 3.7
 EPSILON = 0.2
 
