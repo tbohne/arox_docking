@@ -103,6 +103,8 @@ class DetectContainer(smach.State):
                 self.entry_pub.publish(pose)
                 userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
                 return 'succeeded_two_corners'
+
+        # TODO: implement slight pos change
         return 'aborted'
 
     def determine_container_entry(self, points):
