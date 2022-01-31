@@ -172,7 +172,7 @@ class DetectionServer:
             # visualize base line
             rospy.loginfo("vis base line..")
             self.dbg_pub_base.publish([])
-            rospy.sleep(1)
+            #rospy.sleep(1)
             self.dbg_pub_base.publish(point_list)
             p1, p2 = compute_line_points(theta_base, radius)
             self.line_pub.publish([p1, p2])
@@ -225,7 +225,7 @@ class DetectionServer:
                     point_list, theta_base, theta, avg_points, False)
 
                 self.dbg_pub.publish([])
-                rospy.sleep(1)
+                #rospy.sleep(1)
                 self.dbg_pub.publish(point_list)
                 rospy.loginfo("testing new line..")
 
@@ -242,7 +242,7 @@ class DetectionServer:
                         rospy.loginfo("-------------------------")
                         rospy.loginfo("infeasible line length..")
                         rospy.loginfo("-------------------------")
-                        rospy.sleep(2)
+                        #rospy.sleep(2)
                 else:
                     rospy.loginfo("-------------------------")
                     rospy.loginfo("infeasible..")
@@ -250,7 +250,7 @@ class DetectionServer:
                     rospy.loginfo("line corres: %s", line_corresponds_to_already_detected_lines(theta, found_line_params, radius))
                     rospy.loginfo("reasonable line: %s", infeasible_line)
                     detected_reasonable_line(point_list, theta_base, theta, avg_points, True)
-                    rospy.sleep(2)
+                    #rospy.sleep(2)
                 hough_copy[c][r] = 0
 
             # at least two corners found
@@ -648,17 +648,47 @@ def feasible_intersections(detected, radius, theta):
     tmp = list(detected)
     tmp.append((radius, theta))
     intersections = compute_intersection_points(tmp)
-    for p in intersections:
-        for j in intersections:
-            if p != j:
-                d = dist(p, j)
-                width_eps = config.CONTAINER_WIDTH * config.EPSILON
-                length_eps = config.CONTAINER_LENGTH * config.EPSILON
-                tolerated_width = config.CONTAINER_WIDTH - width_eps < d < config.CONTAINER_WIDTH + width_eps
-                # TODO: check hard coded additional length_eps -> was necessary occasionally
-                tolerated_length = config.CONTAINER_LENGTH - length_eps < d < config.CONTAINER_LENGTH + length_eps * 2
-                if not tolerated_width and not tolerated_length:
-                    return False
+
+    # only feasible options
+    if not len(intersections) in [0, 1, 2, 4]:
+        rospy.loginfo("INFEASIBLE INTERSECTION NUMBER..: %s", len(intersections))
+        return False
+
+    # no distances to be checked
+    if len(intersections) == 1 or len(intersections) == 0:
+        return True
+
+    width_eps = config.CONTAINER_WIDTH * 0.05  # config.EPSILON
+    length_eps = config.CONTAINER_LENGTH * 0.05  # config.EPSILON
+
+    if len(intersections) == 2:
+        d = dist(intersections[0], intersections[1])
+        tolerated_width = config.CONTAINER_WIDTH - width_eps < d < config.CONTAINER_WIDTH + width_eps
+        tolerated_length = config.CONTAINER_LENGTH - length_eps < d < config.CONTAINER_LENGTH + length_eps
+
+        if not tolerated_width and not tolerated_length:
+            rospy.loginfo("dist: %s", d)
+            rospy.loginfo("tolerated width: %s, tolerated length: %s", tolerated_width, tolerated_length)
+            rospy.loginfo("INFEASIBLE WIDTH / LENGTH OF THE TWO INTERSECTIONS")
+            return False
+
+    if len(intersections) == 4:
+        for p in intersections:
+            len_cnt = wid_cnt = 0
+            for j in intersections:
+                if p != j:
+                    d = dist(p, j)
+                    tolerated_width = config.CONTAINER_WIDTH - width_eps < d < config.CONTAINER_WIDTH + width_eps
+                    tolerated_length = config.CONTAINER_LENGTH - length_eps < d < config.CONTAINER_LENGTH + length_eps
+
+                    if tolerated_length:
+                        len_cnt += 1
+                    elif tolerated_width:
+                        wid_cnt += 1
+
+            if len_cnt != 1 or wid_cnt != 1:
+                rospy.loginfo("4 INTERSECTIONS, BUT CNT INCORRECT..")
+                return False
     return True
 
 
