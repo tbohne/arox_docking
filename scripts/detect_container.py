@@ -469,9 +469,15 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points, log):
     avg_dist, max_dist = compute_avg_and_max_distance(point_list)
     reasonable_dist = reasonable_dist_to_already_detected_lines(point_list, avg_points)
     tolerated_UB = config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON * 2
+
     # shouldn't be too restrictive at the lower bound (partially detected lines etc.)
-    tolerated_LB = 0.5
+    # however, for the base line it should
+    if theta_base is None:
+        tolerated_LB = config.CONTAINER_WIDTH - config.CONTAINER_WIDTH * 0.05
+    else:
+        tolerated_LB = 1.0
     reasonable_len = tolerated_UB >= max_dist >= tolerated_LB
+
     # TODO: perhaps not so useful
     reasonable_avg_distances = True  # config.CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
     jumps = False  # detect_jumps(point_list)
