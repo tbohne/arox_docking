@@ -203,7 +203,7 @@ class DetectionServer:
                 radius = get_radius_by_index(c)
                 theta = get_theta_by_index(r)
                 point_list = median_filter(np.array(points[(c, r)]))
-                already_used = already_tested_line(found_line_params, radius, theta) or already_tested_line(
+                already_used = already_found_line(found_line_params, radius, theta) or already_tested_line(
                     tested_lines, radius, theta)
                 too_far_away = dist(compute_avg_point(point_list),
                                     base_avg) > config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON
@@ -526,6 +526,24 @@ def update_avg_points(avg_points, point_list):
     avg_points.append(avg)
 
 
+def already_found_line(found_lines, radius, theta):
+    """
+    Checks whether the line (or a very similar line) represented by radius and theta was found before.
+
+    :param found_lines: parameters of already found lines
+    :param radius: radius value of currently considered line
+    :param theta: theta value of currently considered line
+    :return: whether the line was already found
+    """
+    for r, t in found_lines:
+        diff_r = abs(abs(radius) - abs(r))
+        diff_t = abs(abs(theta) - abs(t))
+        # if a line was found at a similar radius, it should be rotated by roughly 90 degrees
+        if diff_r < config.DELTA_RADIUS_CHECK * 8 and diff_t < 80:
+            return True
+    return False
+
+
 def already_tested_line(tested_lines, radius, theta):
     """
     Checks whether the line (or a very similar line) represented by radius and theta was considered before.
@@ -538,8 +556,9 @@ def already_tested_line(tested_lines, radius, theta):
     for r, t in tested_lines:
         diff_r = abs(abs(radius) - abs(r))
         diff_t = abs(abs(theta) - abs(t))
-        # TODO: check whether 10 * RAD actually makes sense
-        if diff_r < config.DELTA_RADIUS_CHECK * 2 and diff_t < 80:
+        # unlike the `already_found_line` method, here we only compare to already tested lines such that a similar
+        # radius should imply a different rotation, but not necessarily one by ~90 degrees
+        if diff_r < config.DELTA_RADIUS_CHECK * 2 and diff_t < 30:
             return True
     return False
 
