@@ -35,6 +35,7 @@ class DetectionServer:
         self.line_pub = rospy.Publisher("/publish_lines", PointArray, queue_size=1)
         self.corner_pub = rospy.Publisher("/publish_corners", PointArray, queue_size=1)
         self.dbg_pub = rospy.Publisher("/publish_dbg", PointArray, queue_size=1)
+        self.dbg_pub_base = rospy.Publisher("/publish_dbg_base", PointArray, queue_size=1)
         self.clear_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
     def reset(self):
@@ -160,7 +161,7 @@ class DetectionServer:
             theta_base = get_theta_by_index(r)
             radius = get_radius_by_index(c)
             already_tested = already_tested_line(tested_base_lines, radius, theta_base)
-            reasonable_line = detected_reasonable_line(point_list, None, theta_base, [])
+            reasonable_line = detected_reasonable_line(point_list, None, theta_base, [], False)
 
             if already_tested or len(point_list) <= dynamic_acc_thresh_based_on_dist or not reasonable_line:
                 hough_space[c][r] = 0
@@ -169,7 +170,10 @@ class DetectionServer:
                 continue
 
             # visualize base line
-            self.dbg_pub.publish(point_list)
+            rospy.loginfo("vis base line..")
+            self.dbg_pub_base.publish([])
+            rospy.sleep(1)
+            self.dbg_pub_base.publish(point_list)
             p1, p2 = compute_line_points(theta_base, radius)
             self.line_pub.publish([p1, p2])
 
@@ -186,6 +190,12 @@ class DetectionServer:
             # TODO: potential problem: if something didn't work out as base line, it is set to 0 and not used at all
             base_avg = compute_avg_point(point_list)
             tested_lines = []
+
+            rospy.loginfo("############################################################")
+            rospy.loginfo("############################################################")
+            rospy.loginfo("BASE SET ---------------------------------")
+            rospy.loginfo("############################################################")
+            rospy.loginfo("############################################################")
 
             # detect remaining 2-3 sides
             while len(found_line_params) < 4 and hough_copy.max() > dynamic_acc_thresh_based_on_dist:
@@ -212,17 +222,35 @@ class DetectionServer:
                     dynamic_acc_thresh_based_on_dist = config.LINE_LB
 
                 infeasible_line = len(point_list) <= dynamic_acc_thresh_based_on_dist or not detected_reasonable_line(
-                    point_list, theta_base, theta, avg_points)
+                    point_list, theta_base, theta, avg_points, False)
+
+                self.dbg_pub.publish([])
+                rospy.sleep(1)
+                self.dbg_pub.publish(point_list)
+                rospy.loginfo("testing new line..")
 
                 if not infeasible_line and line_corresponds_to_already_detected_lines(theta, found_line_params, radius):
                     _, length = compute_avg_and_max_distance(point_list)
                     if feasible_line_length(line_lengths, length):
-                        self.dbg_pub.publish(point_list)
+                        #self.dbg_pub.publish(point_list)
                         p1, p2 = compute_line_points(theta, radius)
                         self.line_pub.publish([p1, p2])
                         found_line_params.append((radius, theta))
                         line_lengths.append(length)
                         update_avg_points(avg_points, point_list)
+                    else:
+                        rospy.loginfo("-------------------------")
+                        rospy.loginfo("infeasible line length..")
+                        rospy.loginfo("-------------------------")
+                        rospy.sleep(2)
+                else:
+                    rospy.loginfo("-------------------------")
+                    rospy.loginfo("infeasible..")
+                    rospy.loginfo("-------------------------")
+                    rospy.loginfo("line corres: %s", line_corresponds_to_already_detected_lines(theta, found_line_params, radius))
+                    rospy.loginfo("reasonable line: %s", infeasible_line)
+                    detected_reasonable_line(point_list, theta_base, theta, avg_points, True)
+                    rospy.sleep(2)
                 hough_copy[c][r] = 0
 
             # at least two corners found
@@ -422,7 +450,7 @@ def detect_jumps(points_on_line):
     return jump_cnt >= 3
 
 
-def detected_reasonable_line(point_list, theta_base, theta, avg_points):
+def detected_reasonable_line(point_list, theta_base, theta, avg_points, log):
     """
     Determines whether the detected line represented by the given list of points fulfills several
     criteria checking for its plausibility in terms of being a feasible container side.
@@ -431,6 +459,7 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points):
     :param theta_base: theta value of the base line
     :param theta: theta value of the currently considered line
     :param avg_points: points representing the average of previously detected lines
+    :param log: determines whether potential problems should be logged
     :return: whether the detected line is a plausible container side
     """
     diff = 90 if theta_base is None else abs(theta - theta_base)
@@ -443,10 +472,14 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points):
     # shouldn't be too restrictive at the lower bound (partially detected lines etc.)
     tolerated_LB = 0.5
     reasonable_len = tolerated_UB >= max_dist >= tolerated_LB
-
     # TODO: perhaps not so useful
     reasonable_avg_distances = True  # config.CONTAINER_WIDTH / 2 >= avg_dist >= 0.5
     jumps = False  # detect_jumps(point_list)
+
+    if log:
+        rospy.loginfo("reasonable len: %s, len: %s", reasonable_len, max_dist)
+        rospy.loginfo("reasonable dist: %s", reasonable_dist)
+        rospy.loginfo("orthogonal to base: %s, diff: %s", orthogonal_to_base, diff)
 
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and not jumps
 
@@ -641,6 +674,7 @@ def feasible_line_length(line_lengths, curr_length):
     length_eps = config.CONTAINER_LENGTH * config.EPSILON
     # width epsilon at upper bound should be very low because of partially detected long sides
     width_eps = config.CONTAINER_WIDTH * 0.05
+
     # can't be too strict here due to partially detected lines
     if 0.5 < curr_length < config.CONTAINER_WIDTH + width_eps:
         # check whether we have at most one short side detected yet
@@ -660,6 +694,7 @@ def feasible_line_length(line_lengths, curr_length):
             return False
     else:
         return False
+
     return True
 
 
@@ -673,6 +708,13 @@ def line_corresponds_to_already_detected_lines(theta, detected, radius):
     :param radius: radius value of the detected line
     :return: whether the newly detected line corresponds to the previously detected ones
     """
+    rospy.loginfo("###############################################################")
+    rospy.loginfo("feasible dist: %s", feasible_distances(detected, theta, radius))
+    rospy.loginfo("feasible angles: %s", feasible_angles(detected, theta))
+    rospy.loginfo("feasible orientation: %s", feasible_orientation(detected, radius, theta))
+    rospy.loginfo("feasible intersections: %s", feasible_intersections(detected, radius, theta))
+    rospy.loginfo("###############################################################")
+
     return feasible_distances(detected, theta, radius) and feasible_angles(detected, theta) and feasible_orientation(
         detected, radius, theta) and feasible_intersections(detected, radius, theta)
 
