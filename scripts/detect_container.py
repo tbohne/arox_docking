@@ -425,7 +425,7 @@ def reasonable_dist_to_already_detected_lines(point_list, avg_points):
     for p in avg_points:
         eps_length = config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON
         # TODO: the LB is quite dangerous here -> could lead to missed sides (but also kinda necessary)
-        if dist(avg, p) > eps_length or dist(avg, p) < config.CONTAINER_WIDTH / 3:
+        if dist(avg, p) > eps_length or dist(avg, p) < config.CONTAINER_WIDTH / 4:
             return False
     return True
 
