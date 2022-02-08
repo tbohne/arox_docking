@@ -138,7 +138,8 @@ class LocalizationServer:
         vector_length = math.sqrt(config.CHARGING_STATION_POS_X ** 2 + config.CHARGING_STATION_POS_Y ** 2)
         vector_angle = math.atan(config.CHARGING_STATION_POS_X / config.CHARGING_STATION_POS_Y)
 
-        curr_dist = math.inf
+        # math.inf is not feasible in python2
+        curr_dist = float('inf') #math.inf
         for p in self.create_all_candidate_points(B, vector_angle, vector_length):
             d = dist(p, center)
             if d < curr_dist:
