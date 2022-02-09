@@ -80,6 +80,7 @@ class DetectEntry(smach.State):
             client = actionlib.SimpleActionClient('detect_container', DetectAction)
             client.wait_for_server()
             goal = DetectGoal()
+            goal.scan_mode = "full"
             client.send_goal(goal)
             client.wait_for_result()
             res = client.get_result().corners
