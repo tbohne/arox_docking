@@ -47,13 +47,14 @@ class DetectContainer(smach.State):
     """
 
     def __init__(self):
-        smach.State.__init__(self, outcomes=['succeeded_two_corners', 'succeeded_four_corners', 'aborted'],
+        smach.State.__init__(self, outcomes=['succeeded_two_corners', 'succeeded_four_corners', 'aborted', 'failed'],
                              input_keys=['detect_container_input'],
-                             output_keys=['detect_container_output'])
+                             output_keys=['detect_container_output', 'sm_output'])
 
         self.entry_pub = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
         self.robot_pose = None
         rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
+        self.abortion_cnt = 0
 
     def odom_callback(self, odom):
         """
@@ -90,6 +91,7 @@ class DetectContainer(smach.State):
                 userdata.detect_container_output = res
                 rospy.loginfo("already detected all four corners of the container..")
                 rospy.loginfo("--> skip state 'ALIGN_ROBOT_TO_RAMP' and move directly into it..")
+                self.abortion_cnt = 0
                 return 'succeeded_four_corners'
 
             # only detected entry
@@ -102,9 +104,14 @@ class DetectContainer(smach.State):
                 pose.pose.orientation = Quaternion(*q)
                 self.entry_pub.publish(pose)
                 userdata.detect_container_output = self.get_container_entry_with_orientation(container_entry, angle)
+                self.abortion_cnt = 0
                 return 'succeeded_two_corners'
 
         # TODO: implement slight pos change
+        self.abortion_cnt += 1
+        if self.abortion_cnt == 10:
+            userdata.sm_output = get_failure_msg()
+            return 'failed'
         return 'aborted'
 
     def determine_container_entry(self, points):
@@ -563,7 +570,8 @@ class DockingStateMachine(smach.StateMachine):
             self.add('DETECT_CONTAINER', DetectContainer(),
                      transitions={'succeeded_two_corners': 'ALIGN_ROBOT_TO_RAMP',
                                   'succeeded_four_corners': 'DRIVE_INTO_CONTAINER',
-                                  'aborted': 'DETECT_CONTAINER'},
+                                  'aborted': 'DETECT_CONTAINER',
+                                  'failed': 'failed'},
                      remapping={'detect_container_output': 'sm_input'})
 
             self.add('ALIGN_ROBOT_TO_RAMP', AlignRobotToRamp(),
