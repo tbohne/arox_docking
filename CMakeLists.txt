@@ -67,6 +67,7 @@ add_message_files(
 add_action_files(
   FILES
   Dock.action
+  Undock.action
   Detect.action
   Localize.action
 )

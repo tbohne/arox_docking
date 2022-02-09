@@ -1,0 +1,8 @@
+#goal
+geometry_msgs/PoseStamped ramp_alignment_pose
+---
+#result
+string result_state
+---
+#feedback
+float64 percentage
