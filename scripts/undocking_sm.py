@@ -8,7 +8,7 @@ import smach
 import smach_ros
 import tf2_ros
 from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, DETECTION_ATTEMPTS
-from arox_docking.msg import DockAction, DetectAction, DetectGoal
+from arox_docking.msg import UndockAction, DetectAction, DetectGoal
 from arox_docking.util import transform_pose, dist, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from mbf_msgs.msg import MoveBaseAction, MoveBaseGoal
@@ -75,6 +75,12 @@ class DetectEntry(smach.State):
         :return: outcome of the execution (success / failure)
         """
         rospy.loginfo('executing state DETECT_ENTRY')
+
+        if userdata.detect_entry_input:
+            rospy.loginfo("POSITION OUTSIDE THE CONTAINER PROVIDED AS INPUT..")
+            pose_stamped = transform_pose(TF_BUFFER, userdata.detect_entry_input.ramp_alignment_pose, 'map')
+            userdata.detect_entry_output = pose_stamped
+            return 'succeeded'
 
         for _ in range(DETECTION_ATTEMPTS):
             client = actionlib.SimpleActionClient('detect_container', DetectAction)
@@ -299,7 +305,8 @@ class UndockingStateMachine(smach.StateMachine):
 
             self.add('DETECT_ENTRY', DetectEntry(),
                      transitions={'succeeded': 'DRIVE_OUT_OF_CONTAINER', 'aborted': 'DETECT_ENTRY'},
-                     remapping={'detect_entry_output': 'sm_input'})
+                     remapping={'detect_entry_input': 'sm_input',
+                                'detect_entry_output': 'sm_input'})
 
             self.add('DRIVE_OUT_OF_CONTAINER', DriveOutOfContainer(),
                      transitions={'succeeded': 'undocked', 'aborted': 'failed'},
@@ -318,7 +325,7 @@ def main():
 
     # construct action server wrapper
     asw = smach_ros.ActionServerWrapper(
-        'undock_from_charging_station', DockAction,
+        'undock_from_charging_station', UndockAction,
         wrapped_container=sm,
         succeeded_outcomes=['undocked'],
         aborted_outcomes=['failed'],
