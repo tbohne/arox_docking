@@ -170,7 +170,6 @@ class DetectionServer:
                 continue
 
             # visualize base line
-            rospy.loginfo("vis base line..")
             self.dbg_pub_base.publish([])
             #rospy.sleep(1)
             self.dbg_pub_base.publish(point_list)
@@ -191,11 +190,11 @@ class DetectionServer:
             base_avg = compute_avg_point(point_list)
             tested_lines = []
 
-            rospy.loginfo("############################################################")
-            rospy.loginfo("############################################################")
-            rospy.loginfo("BASE SET ---------------------------------")
-            rospy.loginfo("############################################################")
-            rospy.loginfo("############################################################")
+            # rospy.loginfo("############################################################")
+            # rospy.loginfo("############################################################")
+            # rospy.loginfo("BASE SET ---------------------------------")
+            # rospy.loginfo("############################################################")
+            # rospy.loginfo("############################################################")
 
             # detect remaining 2-3 sides
             while len(found_line_params) < 4 and hough_copy.max() > dynamic_acc_thresh_based_on_dist:
@@ -227,7 +226,7 @@ class DetectionServer:
                 self.dbg_pub.publish([])
                 #rospy.sleep(1)
                 self.dbg_pub.publish(point_list)
-                rospy.loginfo("testing new line..")
+                # rospy.loginfo("testing new line..")
 
                 if not infeasible_line and line_corresponds_to_already_detected_lines(theta, found_line_params, radius):
                     _, length = compute_avg_and_max_distance(point_list)
@@ -239,16 +238,17 @@ class DetectionServer:
                         line_lengths.append(length)
                         update_avg_points(avg_points, point_list)
                     else:
-                        rospy.loginfo("-------------------------")
-                        rospy.loginfo("infeasible line length..")
-                        rospy.loginfo("-------------------------")
+                        pass
+                        # rospy.loginfo("-------------------------")
+                        # rospy.loginfo("infeasible line length..")
+                        # rospy.loginfo("-------------------------")
                         #rospy.sleep(2)
                 else:
-                    rospy.loginfo("-------------------------")
-                    rospy.loginfo("infeasible..")
-                    rospy.loginfo("-------------------------")
-                    rospy.loginfo("line corres: %s", line_corresponds_to_already_detected_lines(theta, found_line_params, radius))
-                    rospy.loginfo("reasonable line: %s", infeasible_line)
+                    # rospy.loginfo("-------------------------")
+                    # rospy.loginfo("infeasible..")
+                    # rospy.loginfo("-------------------------")
+                    # rospy.loginfo("line corres: %s", line_corresponds_to_already_detected_lines(theta, found_line_params, radius))
+                    # rospy.loginfo("reasonable line: %s", infeasible_line)
                     detected_reasonable_line(point_list, theta_base, theta, avg_points, True)
                     #rospy.sleep(2)
                 hough_copy[c][r] = 0
@@ -485,10 +485,11 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points, log):
     jumps = detect_jumps(point_list) if theta_base is None else False
 
     if log:
-        rospy.loginfo("reasonable len: %s, len: %s", reasonable_len, max_dist)
-        rospy.loginfo("reasonable dist: %s", reasonable_dist)
-        rospy.loginfo("orthogonal to base: %s, diff: %s", orthogonal_to_base, diff)
-        rospy.loginfo("jumps: %s", jumps)
+        pass
+        # rospy.loginfo("reasonable len: %s, len: %s", reasonable_len, max_dist)
+        # rospy.loginfo("reasonable dist: %s", reasonable_dist)
+        # rospy.loginfo("orthogonal to base: %s, diff: %s", orthogonal_to_base, diff)
+        # rospy.loginfo("jumps: %s", jumps)
 
     return reasonable_len and reasonable_dist and reasonable_avg_distances and orthogonal_to_base and not jumps
 
@@ -679,7 +680,7 @@ def feasible_intersections(detected, radius, theta):
 
     # only feasible options
     if not len(intersections) in [0, 1, 2, 4]:
-        rospy.loginfo("INFEASIBLE INTERSECTION NUMBER..: %s", len(intersections))
+        #rospy.loginfo("INFEASIBLE INTERSECTION NUMBER..: %s", len(intersections))
         return False
 
     # no distances to be checked
@@ -695,9 +696,9 @@ def feasible_intersections(detected, radius, theta):
         tolerated_length = config.CONTAINER_LENGTH - length_eps < d < config.CONTAINER_LENGTH + length_eps
 
         if not tolerated_width and not tolerated_length:
-            rospy.loginfo("dist: %s", d)
-            rospy.loginfo("tolerated width: %s, tolerated length: %s", tolerated_width, tolerated_length)
-            rospy.loginfo("INFEASIBLE WIDTH / LENGTH OF THE TWO INTERSECTIONS")
+            # rospy.loginfo("dist: %s", d)
+            # rospy.loginfo("tolerated width: %s, tolerated length: %s", tolerated_width, tolerated_length)
+            # rospy.loginfo("INFEASIBLE WIDTH / LENGTH OF THE TWO INTERSECTIONS")
             return False
 
     if len(intersections) == 4:
@@ -715,7 +716,7 @@ def feasible_intersections(detected, radius, theta):
                         wid_cnt += 1
 
             if len_cnt != 1 or wid_cnt != 1:
-                rospy.loginfo("4 INTERSECTIONS, BUT CNT INCORRECT..")
+                # rospy.loginfo("4 INTERSECTIONS, BUT CNT INCORRECT..")
                 return False
     return True
 
@@ -764,12 +765,12 @@ def line_corresponds_to_already_detected_lines(theta, detected, radius):
     :param radius: radius value of the detected line
     :return: whether the newly detected line corresponds to the previously detected ones
     """
-    rospy.loginfo("###############################################################")
-    rospy.loginfo("feasible dist: %s", feasible_distances(detected, theta, radius))
-    rospy.loginfo("feasible angles: %s", feasible_angles(detected, theta))
-    rospy.loginfo("feasible orientation: %s", feasible_orientation(detected, radius, theta))
-    rospy.loginfo("feasible intersections: %s", feasible_intersections(detected, radius, theta))
-    rospy.loginfo("###############################################################")
+    # rospy.loginfo("###############################################################")
+    # rospy.loginfo("feasible dist: %s", feasible_distances(detected, theta, radius))
+    # rospy.loginfo("feasible angles: %s", feasible_angles(detected, theta))
+    # rospy.loginfo("feasible orientation: %s", feasible_orientation(detected, radius, theta))
+    # rospy.loginfo("feasible intersections: %s", feasible_intersections(detected, radius, theta))
+    # rospy.loginfo("###############################################################")
 
     return feasible_distances(detected, theta, radius) and feasible_angles(detected, theta) and feasible_orientation(
         detected, radius, theta) and feasible_intersections(detected, radius, theta)
