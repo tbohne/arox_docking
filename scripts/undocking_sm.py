@@ -7,7 +7,7 @@ import rospy
 import smach
 import smach_ros
 import tf2_ros
-from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, DETECTION_ATTEMPTS
+from arox_docking.config import CONTAINER_WIDTH, CONTAINER_LENGTH, EPSILON, MBF_FAILURE, DETECTION_ATTEMPTS, MBF_PAT_EXCEEDED
 from arox_docking.msg import UndockAction, DetectAction, DetectGoal
 from arox_docking.util import transform_pose, dist, get_failure_msg, get_success_msg
 from geometry_msgs.msg import Point, PoseStamped, Quaternion
@@ -267,7 +267,7 @@ class DriveOutOfContainer(smach.State):
 
         # rospy.loginfo("mbf res: %s", move_base_client.get_result())
 
-        if move_base_client.get_result().outcome == MBF_FAILURE:
+        if move_base_client.get_result().outcome in [MBF_FAILURE, MBF_PAT_EXCEEDED]:
             rospy.loginfo("navigation failed: %s", move_base_client.get_goal_status_text())
             return False
         return True
