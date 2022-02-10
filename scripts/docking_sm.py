@@ -108,8 +108,10 @@ class DetectContainer(smach.State):
                 return 'succeeded_two_corners'
 
         # TODO: implement slight pos change
+        rospy.loginfo("DETECTION ATTEMPT: %s", self.abortion_cnt)
+        rospy.sleep(2)
         self.abortion_cnt += 1
-        if self.abortion_cnt == 10:
+        if self.abortion_cnt == DETECTION_ATTEMPTS:
             userdata.sm_output = get_failure_msg()
             return 'failed'
         return 'aborted'
@@ -285,6 +287,7 @@ class DriveIntoContainer(smach.State):
         pose.header.frame_id = odom.header.frame_id
         pose.pose = odom.pose.pose
         pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
+        pose_stamped.header.frame_id = 'base_link'
         self.robot_pose = pose_stamped
 
     def compute_entry_from_four_corners(self, container_corners):
@@ -387,8 +390,9 @@ class DriveIntoContainer(smach.State):
                     self.drive_to(self.init_pose)
                     return 'aborted'
 
+            self.move_back_and_forth()
+
         rospy.loginfo("failed to detect container corners -> moving back and forth before trying again..")
-        self.move_back_and_forth()
         userdata.sm_output = get_failure_msg()
         return 'aborted'
 
@@ -582,7 +586,7 @@ class DockingStateMachine(smach.StateMachine):
 
             self.add('DRIVE_INTO_CONTAINER', DriveIntoContainer(),
                      transitions={'succeeded': 'LOCALIZE_CHARGING_STATION',
-                                  'aborted': 'DRIVE_INTO_CONTAINER'},
+                                  'aborted': 'failed'},
                      remapping={'drive_into_container_input': 'sm_input',
                                 'drive_into_container_output': 'sm_input'})
 
