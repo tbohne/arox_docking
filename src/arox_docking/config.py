@@ -22,7 +22,7 @@ RADIUS_MAX = 10.0
 # --- detection procedure ---
 TIME_LIMIT = 60  # in seconds
 CHECK_FREQUENCY = 3  # in seconds
-DETECTION_ATTEMPTS = 10
+DETECTION_ATTEMPTS = 5
 BASE_TEST_LIMIT = 500
 BASE_ATTEMPT_LIMIT = 1000
 DEFAULT_DIST = 10  # in meters
