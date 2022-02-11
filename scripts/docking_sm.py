@@ -611,6 +611,9 @@ def main():
     tf2_ros.TransformListener(TF_BUFFER)
     sm = DockingStateMachine()
 
+    sis = smach_ros.IntrospectionServer('docking', sm, '/DOCKING')
+    sis.start()
+
     # construct action server wrapper
     asw = smach_ros.ActionServerWrapper(
         'dock_to_charging_station', DockAction,

@@ -323,6 +323,9 @@ def main():
 
     sm = UndockingStateMachine()
 
+    sis = smach_ros.IntrospectionServer('undocking', sm, '/UNDOCKING')
+    sis.start()
+
     # construct action server wrapper
     asw = smach_ros.ActionServerWrapper(
         'undock_from_charging_station', UndockAction,
