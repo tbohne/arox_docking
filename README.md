@@ -1,5 +1,9 @@
 # Autonomous Docking: AROX -> Inductive Charging Station
 
+## Architecture
+
+![](docking_smach.png)
+
 - <u>Assumed:</u> **State: CONTAINER_PROXIMITY**
     - robot drove near the container, e.g. based on GPS
     - *postcondition*: robot faces container in certain area
