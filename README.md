@@ -55,7 +55,7 @@
 - [arox_description](https://git.ni.dfki.de/arox/arox_core/arox_description): ROS launch files and URDF model for the AROX system
     - branch: `feature_flying_sick_tim`
 - [container_description](https://git.ni.dfki.de/arox/container_description): ROS launch files and URDF model for the mobile container (charge station)
-    - branch: `feature_simple_collisions`
+    - branch: `feature_lta_conatiner`
 - [innok_heros_description](https://git.ni.dfki.de/arox/innok_heros/innok_heros_description): URDF description for Innok Heros robot
     - branch: `arox_noetic`
 - [innok_heros_driver](https://git.ni.dfki.de/arox/innok_heros/innok_heros_driver): ROS driver for the Innok Heros robot platform
@@ -74,9 +74,29 @@
 - run docker container named 'arox_docking': `aroxstartdocker arox_docking` (alias)
     - launch outdoor simulation: `roslaunch arox_launch arox_sim_outdoor.launch`
 - provide docking / undocking actions: `roslauch arox_docking docking.launch`
-- start dummy docking / undocking procedure: `rosrun arox_docking test_loop.py`
+- start docking / undocking test loop: `rosrun arox_docking test_loop.py`
 
-## Plan Executor (within docker container)
+## Action API
+
+The docking / undocking state machines provide implementations of the `SimpleActionServer` (cf. http://wiki.ros.org/actionlib).  
+**Docking Example**
+```
+docking_client = actionlib.SimpleActionClient('dock_to_charging_station', DockAction)
+goal = DockGoal()
+goal.goal = "custom_goal"
+docking_client.wait_for_server()
+docking_client.send_goal(goal)
+```
+**Undocking Example**
+```
+undocking_client = actionlib.SimpleActionClient('undock_from_charging_station', UndockAction)
+goal = UndockGoal()
+goal.ramp_alignment_pose = robot_pose  # optional
+undocking_client.wait_for_server()
+undocking_client.send_goal(goal)
+```
+
+## Plan Executor (within Docker Container)
 
 - access exploration GUI: `http://localhost/exploration_gui/`
 - run AROX engine: `rosrun arox_engine arox_engine.py`
@@ -86,13 +106,13 @@
 
 - launch keyboard control: `rosrun teleop_twist_keyboard teleop_twist_keyboard.py`
 
-## Visualize Sensor Data
+## Visualize Sensor Data and Detection Markers
 
 - [rViz](https://wiki.ros.org/rviz)
     - fixed frame: `map`
     - open the provided config `conf.rviz`
 
-## Open Container
+## Open Container (Adjust Joint Position)
 
-- `rostopic pub -1 /container/rampA_position_controller/command std_msgs/Float64 "data: 2.0"`
+- `rostopic pub -1 /container/rampA_position_controller/command std_msgs/Float64 "data: 1.57"`
 
