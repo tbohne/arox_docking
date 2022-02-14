@@ -17,17 +17,16 @@ TF_BUFFER = None
 
 class DetectionServer:
     """
-    Simple action server that detects the container in a laser scan using a Hough transform.
+    Simple action server that performs a Hough transform to detect lines in a laser scan and uses a large number of
+    tailored rules to find a reasonable combination of line segments that could represent the container. Essentially,
+    the whole approach is centered around the idea that the container is a relatively simple geometric shape that can be
+    detected in a laser scan - a combination of line segments.
     """
 
     def __init__(self):
         self.server = actionlib.SimpleActionServer('detect_container', DetectAction, self.execute, False)
         self.server.start()
         self.pose_sub = None
-        self.line_pub = None
-        self.corner_pub = None
-        self.dbg_pub = None
-        self.clear_pub = None
         self.corners = None
         self.robot_pos = None
 
@@ -40,18 +39,18 @@ class DetectionServer:
 
     def reset(self):
         """
-        Resets detection related values and initializes publishers and subscribers.
+        Resets detection related values and renews robot pose subscription.
         """
         # reset detected corners
         self.corners = None
         # subscribe to robot pose
         self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
 
-    def execute(self, goal):
+    def execute(self, goal: DetectAction):
         """
-        Executes the action server.
+        Executes the container detection action server.
 
-        :param goal: goal to be performed (dummy atm)
+        :param goal: goal to be performed - contains information of whether to use full of partial scan
         """
         self.reset()
         result = DetectResult()
@@ -60,6 +59,7 @@ class DetectionServer:
         if goal.scan_mode == "full":
             try:
                 # create a new subscription to the topic, receive one message, then unsubscribe
+                # --> specially configured scan, cf. pointcloud_to_laserscan_sim_frame.launch in "arox_indoor_navi"
                 scan = rospy.wait_for_message("/scanVelodyneFrame", LaserScan, timeout=10)
                 rospy.loginfo("performing container detection on full laser scan [-100, 100]")
             except rospy.ROSException as e:
@@ -67,8 +67,10 @@ class DetectionServer:
         elif goal.scan_mode == "partial":
             try:
                 # create a new subscription to the topic, receive one message, then unsubscribe
+                # --> specially configured scan, cf. pointcloud_to_laserscan_sim_frame_partial.launch
                 scan = rospy.wait_for_message("/scanVelodyneFramePartial", LaserScan, timeout=10)
-                rospy.loginfo("performing container detection on partial laser scan [-45, 45] -- already aligned in front of it")
+                rospy.loginfo(
+                    "performing container detection on partial laser scan [-45, 45] -- already aligned in front of it")
             except rospy.ROSException as e:
                 rospy.loginfo("problem retrieving partial laser scan: %s", e)
         else:
@@ -86,14 +88,13 @@ class DetectionServer:
             self.pose_sub.unregister()
             self.server.set_aborted()
 
-    def prepare_container_detection(self, scan):
+    def prepare_container_detection(self, scan: LaserScan):
         """
-        Computes the 2D hough transform of the laser scan and initiates the container detection.
+        Computes the 2D Hough transform of the laser scan and initiates the container detection.
 
         :param scan: laser scan to detect container in
         """
-        theta_values = np.deg2rad(
-            np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
+        theta_values = np.deg2rad(np.arange(config.THETA_MIN, config.THETA_MAX, config.DELTA_THETA, dtype=np.double))
         r_values = np.arange(config.RADIUS_MIN, config.RADIUS_MAX, config.DELTA_RADIUS, dtype=np.double)
         # precompute sines and cosines
         cosines = np.cos(theta_values)
@@ -123,7 +124,7 @@ class DetectionServer:
 
         self.detect_container(hough_space, points)
 
-    def line_dist_to_robot(self, point_list):
+    def line_dist_to_robot(self, point_list: list) -> float:
         """
         Computes the distance between the considered line (avg point) and the robot.
 
@@ -132,32 +133,116 @@ class DetectionServer:
         """
         return dist(self.robot_pos, compute_avg_point(point_list)) if len(point_list) > 0 else config.DEFAULT_DIST
 
-    def detect_container(self, hough_space, points):
+    def clear_markers(self):
         """
-        Detects the container based on lines in the specified hough space.
-
-        :param hough_space: result of the hough transform of the laser scan
-        :param points: dictionary containing a list of points corresponding to each (rad, theta) combination
+        Clears the markers of the previous detection run.
         """
-        c, r = retrieve_best_line(hough_space)
-        point_list = median_filter(np.array(points[(c, r)]))
-        dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(self.line_dist_to_robot(point_list))
+        self.dbg_pub.publish([])
+        self.line_pub.publish([])
+        self.corner_pub.publish([])
 
+    def visualize_baseline(self, point_list: list, theta_base: int, radius: int):
+        """
+        Visualizes the baseline candidate in rviz.
+
+        :param point_list: list of points on the considered line
+        :param theta_base: theta value of considered line
+        :param radius: r value of considered line
+        """
+        self.dbg_pub_base.publish([])
+        self.dbg_pub_base.publish(point_list)
+        p1, p2 = compute_line_points(theta_base, radius)
+        self.line_pub.publish([p1, p2])
+
+    def detect_remaining_sides(self, line_params: list, hough: np.array, points: dict, tested_lines: list,
+                               base_avg: Point, theta_base: int, avg_points: list, line_lengths: list,
+                               dynamic_acc_thresh: int):
+        """
+        Detects the remaining 2-3 container sides that correspond to the considered baseline.
+
+        :param line_params: parameters of found lines (r, theta)
+        :param hough: hough space copy
+        :param points: dictionary containing a list of points corresponding to each (r, theta) combination
+        :param tested_lines: list of already tested lines
+        :param base_avg: avg point on baseline
+        :param theta_base: theta value of baseline
+        :param avg_points: avg points of previously detected lines
+        :param line_lengths: lengths of already detected lines
+        :param dynamic_acc_thresh: threshold for accumulator array
+        """
+        while len(line_params) < 4 and hough.max() > dynamic_acc_thresh:
+            c, r = retrieve_best_line(hough)
+            radius = get_radius_by_index(c)
+            theta = get_theta_by_index(r)
+            point_list = median_filter(np.array(points[(c, r)]))
+
+            already_used = already_found_line(line_params, radius, theta) \
+                           or already_tested_line(tested_lines, radius, theta)
+
+            too_far_away = dist(compute_avg_point(point_list), base_avg) \
+                           > config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON
+
+            tested_lines.append((radius, theta))
+
+            if already_used or too_far_away:
+                hough[c][r] = 0
+                continue
+
+            dist_to_robot = self.line_dist_to_robot(point_list)
+            dynamic_acc_thresh = determine_thresh_based_on_dist_to_robot(dist_to_robot)
+
+            # if we already found two lines, we are not that strict for the last two
+            # -> accept lines with fewer points (LB) if they correspond to the others
+            if len(line_params) >= 2 and dynamic_acc_thresh > config.LINE_LB:
+                dynamic_acc_thresh = config.LINE_LB
+
+            infeasible_line = len(point_list) <= dynamic_acc_thresh or not detected_reasonable_line(
+                point_list, theta_base, theta, avg_points, False)
+
+            self.dbg_pub.publish([])
+            self.dbg_pub.publish(point_list)
+
+            if not infeasible_line and line_corresponds_to_already_detected_lines(theta, line_params, radius):
+                _, length = compute_avg_and_max_distance(point_list)
+                if feasible_line_length(line_lengths, length):
+                    p1, p2 = compute_line_points(theta, radius)
+                    self.line_pub.publish([p1, p2])
+                    line_params.append((radius, theta))
+                    line_lengths.append(length)
+                    update_avg_points(avg_points, point_list)
+                elif config.VERBOSE_LOGGING:
+                    rospy.loginfo("infeasible line length..")
+            else:
+                if config.VERBOSE_LOGGING:
+                    rospy.loginfo("-------------------------")
+                    rospy.loginfo("infeasible..")
+                    matches = line_corresponds_to_already_detected_lines(theta, line_params, radius)
+                    rospy.loginfo("line matches already detected ones: %s", matches)
+                    rospy.loginfo("reasonable line: %s", infeasible_line)
+                    rospy.loginfo("-------------------------")
+                detected_reasonable_line(point_list, theta_base, theta, avg_points, True)
+            hough[c][r] = 0
+
+    def detect_container(self, hough_space: np.array, points: dict):
+        """
+        Detects the container based on lines in the specified Hough space.
+
+        :param hough_space: result of the Hough transform of the laser scan
+        :param points: dictionary containing a list of points corresponding to each (r, theta) combination
+        """
         base_attempts = 0
         tested_base_lines = []
 
-        while hough_space.max() >= config.LINE_LB and len(tested_base_lines) < config.BASE_TEST_LIMIT and base_attempts < config.BASE_ATTEMPT_LIMIT:
-            # clear markers of previous detection run
-            self.dbg_pub.publish([])
-            self.line_pub.publish([])
-            self.corner_pub.publish([])
+        while hough_space.max() >= config.LINE_LB and len(
+                tested_base_lines) < config.BASE_TEST_LIMIT and base_attempts < config.BASE_ATTEMPT_LIMIT:
+
+            self.clear_markers()
 
             # base line parameters
             c, r = retrieve_best_line(hough_space)
             point_list = median_filter(np.array(points[(c, r)]))
             dist_to_robot = self.line_dist_to_robot(point_list)
             dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
-
             theta_base = get_theta_by_index(r)
             radius = get_radius_by_index(c)
             already_tested = already_tested_line(tested_base_lines, radius, theta_base)
@@ -166,15 +251,11 @@ class DetectionServer:
             if already_tested or len(point_list) <= dynamic_acc_thresh_based_on_dist or not reasonable_line:
                 hough_space[c][r] = 0
                 base_attempts += 1
-                #rospy.loginfo("base attempt: %s", base_attempts)
+                if config.VERBOSE_LOGGING:
+                    rospy.loginfo("base attempt: %s", base_attempts)
                 continue
 
-            # visualize base line
-            self.dbg_pub_base.publish([])
-            #rospy.sleep(1)
-            self.dbg_pub_base.publish(point_list)
-            p1, p2 = compute_line_points(theta_base, radius)
-            self.line_pub.publish([p1, p2])
+            self.visualize_baseline(point_list, theta_base, radius)
 
             found_line_params = [(radius, theta_base)]
             _, length = compute_avg_and_max_distance(point_list)
@@ -183,78 +264,17 @@ class DetectionServer:
             update_avg_points(avg_points, point_list)
             hough_space[c][r] = 0
             hough_copy = np.copy(hough_space)
-            #rospy.loginfo("base lines tested: %s", len(tested_base_lines))
-            tested_base_lines.append((radius, theta_base))
 
-            # TODO: potential problem: if something didn't work out as base line, it is set to 0 and not used at all
+            if config.VERBOSE_LOGGING:
+                rospy.loginfo("base lines tested: %s", len(tested_base_lines))
+            tested_base_lines.append((radius, theta_base))
             base_avg = compute_avg_point(point_list)
             tested_lines = []
 
-            # rospy.loginfo("############################################################")
-            # rospy.loginfo("############################################################")
-            # rospy.loginfo("BASE SET ---------------------------------")
-            # rospy.loginfo("############################################################")
-            # rospy.loginfo("############################################################")
+            self.detect_remaining_sides(found_line_params, hough_copy, points, tested_lines, base_avg, theta_base,
+                                        avg_points, line_lengths, dynamic_acc_thresh_based_on_dist)
 
-            # detect remaining 2-3 sides
-            while len(found_line_params) < 4 and hough_copy.max() > dynamic_acc_thresh_based_on_dist:
-                c, r = retrieve_best_line(hough_copy)
-                radius = get_radius_by_index(c)
-                theta = get_theta_by_index(r)
-                point_list = median_filter(np.array(points[(c, r)]))
-                already_used = already_found_line(found_line_params, radius, theta) or already_tested_line(
-                    tested_lines, radius, theta)
-                too_far_away = dist(compute_avg_point(point_list),
-                                    base_avg) > config.CONTAINER_LENGTH + config.CONTAINER_LENGTH * config.EPSILON
-                tested_lines.append((radius, theta))
-
-                if already_used or too_far_away:
-                    hough_copy[c][r] = 0
-                    continue
-
-                dist_to_robot = self.line_dist_to_robot(point_list)
-                dynamic_acc_thresh_based_on_dist = determine_thresh_based_on_dist_to_robot(dist_to_robot)
-
-                # if we already found two lines, we are not that strict for the last two
-                # -> accept lines with fewer points (LB) if they correspond to the others
-                if len(found_line_params) >= 2 and dynamic_acc_thresh_based_on_dist > config.LINE_LB:
-                    dynamic_acc_thresh_based_on_dist = config.LINE_LB
-
-                infeasible_line = len(point_list) <= dynamic_acc_thresh_based_on_dist or not detected_reasonable_line(
-                    point_list, theta_base, theta, avg_points, False)
-
-                self.dbg_pub.publish([])
-                #rospy.sleep(1)
-                self.dbg_pub.publish(point_list)
-                # rospy.loginfo("testing new line..")
-
-                if not infeasible_line and line_corresponds_to_already_detected_lines(theta, found_line_params, radius):
-                    _, length = compute_avg_and_max_distance(point_list)
-                    if feasible_line_length(line_lengths, length):
-                        #self.dbg_pub.publish(point_list)
-                        p1, p2 = compute_line_points(theta, radius)
-                        self.line_pub.publish([p1, p2])
-                        found_line_params.append((radius, theta))
-                        line_lengths.append(length)
-                        update_avg_points(avg_points, point_list)
-                    else:
-                        pass
-                        # rospy.loginfo("-------------------------")
-                        # rospy.loginfo("infeasible line length..")
-                        # rospy.loginfo("-------------------------")
-                        #rospy.sleep(2)
-                else:
-                    # rospy.loginfo("-------------------------")
-                    # rospy.loginfo("infeasible..")
-                    # rospy.loginfo("-------------------------")
-                    # rospy.loginfo("line corres: %s", line_corresponds_to_already_detected_lines(theta, found_line_params, radius))
-                    # rospy.loginfo("reasonable line: %s", infeasible_line)
-                    detected_reasonable_line(point_list, theta_base, theta, avg_points, True)
-                    #rospy.sleep(2)
-                hough_copy[c][r] = 0
-
-            # at least two corners found
-            #rospy.loginfo("FOUND LINE PARAMS: %s", len(found_line_params))
+            # at least two corners found (three lines)
             if len(found_line_params) >= 3:
                 tmp = self.publish_detected_container(found_line_params)
                 if len(tmp) >= 2:
@@ -263,7 +283,7 @@ class DetectionServer:
                     for p in avg_points:
                         self.corners.append(p)
                 break
-        rospy.loginfo("STOPPING - HOUGH MAX: %s, ACC_THRESH: %s", hough_space.max(), dynamic_acc_thresh_based_on_dist)
+        rospy.loginfo("STOPPING - HOUGH MAX: %s, ACC THRESH: %s", hough_space.max(), dynamic_acc_thresh_based_on_dist)
 
     def publish_detected_container(self, found_line_params):
         """
@@ -680,7 +700,7 @@ def feasible_intersections(detected, radius, theta):
 
     # only feasible options
     if not len(intersections) in [0, 1, 2, 4]:
-        #rospy.loginfo("INFEASIBLE INTERSECTION NUMBER..: %s", len(intersections))
+        # rospy.loginfo("INFEASIBLE INTERSECTION NUMBER..: %s", len(intersections))
         return False
 
     # no distances to be checked

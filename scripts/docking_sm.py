@@ -395,6 +395,7 @@ class DriveIntoContainer(smach.State):
                     return 'aborted'
 
             self.move_back_and_forth()
+            rospy.sleep(1)
 
         rospy.loginfo("failed to detect container corners -> moving back and forth before trying again..")
         userdata.sm_output = get_failure_msg()
