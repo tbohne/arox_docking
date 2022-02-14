@@ -141,7 +141,7 @@ class DetectionServer:
         self.line_pub.publish([])
         self.corner_pub.publish([])
 
-    def visualize_baseline(self, point_list: list, theta_base: int, radius: int):
+    def visualize_baseline(self, point_list: list, theta_base: int, radius: float):
         """
         Visualizes the baseline candidate in rviz.
 
@@ -232,6 +232,7 @@ class DetectionServer:
         """
         base_attempts = 0
         tested_base_lines = []
+        dynamic_acc_thresh_based_on_dist = 0
 
         while hough_space.max() >= config.LINE_LB and len(
                 tested_base_lines) < config.BASE_TEST_LIMIT and base_attempts < config.BASE_ATTEMPT_LIMIT:
@@ -246,7 +247,7 @@ class DetectionServer:
             theta_base = get_theta_by_index(r)
             radius = get_radius_by_index(c)
             already_tested = already_tested_line(tested_base_lines, radius, theta_base)
-            reasonable_line = detected_reasonable_line(point_list, None, theta_base, [])
+            reasonable_line = detected_reasonable_line(point_list, -1, theta_base, [])
 
             if already_tested or len(point_list) <= dynamic_acc_thresh_based_on_dist or not reasonable_line:
                 hough_space[c][r] = 0
@@ -477,7 +478,7 @@ def detected_reasonable_line(point_list: list, theta_base: int, theta: int, avg_
     :param avg_points: points representing the average of previously detected lines
     :return: whether the detected line is a plausible container side
     """
-    diff = 90 if theta_base is None else abs(theta - theta_base)
+    diff = 90 if theta_base == -1 else abs(theta - theta_base)
     # should be either parallel or orthogonal to base
     orthogonal_or_parallel_to_base = diff <= 2 or 88 <= diff <= 92 or 178 <= diff <= 182 or 268 <= diff <= 272
     avg_dist, max_dist = compute_avg_and_max_distance(point_list)
