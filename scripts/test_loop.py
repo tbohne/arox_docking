@@ -4,12 +4,13 @@ import actionlib
 import rospy
 
 from arox_docking.msg import DockAction
+from arox_docking import config
 
 
 def test_loop():
     rospy.init_node('test_loop')
 
-    for i in range(10):
+    for i in range(config.TEST_RUNS):
         rospy.loginfo("START DOCKING - UNDOCKING PROCEDURE - iteration: %s", i)
 
         docking_client = actionlib.SimpleActionClient('dock_to_charging_station', DockAction)
