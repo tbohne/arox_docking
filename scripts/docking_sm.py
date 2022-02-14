@@ -331,7 +331,8 @@ class DriveIntoContainer(smach.State):
         :return: outcome of the execution (success / failure)
         """
         rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
-        self.init_pose = transform_pose(TF_BUFFER, self.robot_pose, "map")
+        if self.robot_pose:
+            self.init_pose = transform_pose(TF_BUFFER, self.robot_pose, "map")
 
         for _ in range(DETECTION_ATTEMPTS):
             # complete container already detected in previous state - no need to detect it again
@@ -356,7 +357,9 @@ class DriveIntoContainer(smach.State):
                 center.y = np.average([p.y for p in container_corners])
 
                 self.center_pub.publish(center)
-                angle = math.atan2(self.robot_pose.pose.position.y - center.y, self.robot_pose.pose.position.x - center.x)
+                angle = np.pi
+                if self.robot_pose:
+                    angle = math.atan2(self.robot_pose.pose.position.y - center.y, self.robot_pose.pose.position.x - center.x)
                 center_res = self.compute_center(center, angle)
 
                 if center_res:
@@ -387,7 +390,8 @@ class DriveIntoContainer(smach.State):
 
                     userdata.sm_output = get_failure_msg()
                     rospy.loginfo("not able to drive to center - realign in front of ramp before trying again..")
-                    self.drive_to(self.init_pose)
+                    if self.init_pose:
+                        self.drive_to(self.init_pose)
                     return 'aborted'
 
             self.move_back_and_forth()
