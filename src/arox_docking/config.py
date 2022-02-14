@@ -15,6 +15,8 @@ CHARGING_STATION_POS_Y = 0.85
 
 DIST_TO_CONTAINER = 3.5
 
+EXTERNAL_POINT_DIST = 1.5
+
 #################### CONTAINER DETECTION ######################
 # --- hough transform ---
 DELTA_THETA = 2
