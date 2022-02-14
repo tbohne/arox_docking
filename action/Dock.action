@@ -1,8 +1,8 @@
-#goal
+# goal
 string goal
 ---
-#result
+# result
 string result_state
 ---
-#feedback
+# feedback
 float64 percentage

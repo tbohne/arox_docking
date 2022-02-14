@@ -1,8 +1,8 @@
-# define the goal
+# container corners as input - used to compute relative position of charging station
 geometry_msgs/Point[] corners
 ---
-# define the result
+# result - pose in front of the charging station
 geometry_msgs/PoseStamped station_pos
 ---
-# define a feedback message
+# feedback
 float32 percent_complete

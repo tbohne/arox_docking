@@ -1,8 +1,8 @@
-#goal
+# pose in front of the container (aligned with ramp) as input -- reasonable as UNDOCK often follows a previous DOCK
 geometry_msgs/PoseStamped ramp_alignment_pose
 ---
-#result
+# result
 string result_state
 ---
-#feedback
+# feedback
 float64 percentage

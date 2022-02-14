@@ -1,39 +1,11 @@
 <?xml version="1.0" ?>
 
 <launch>
-
     <param name="/use_sim_time" value="true" />
 
     <node pkg="arox_docking" type="visualizer.py" name="visualizer" respawn="true" output="screen" />
-
     <node pkg="arox_docking" type="detect_container.py" name="detect_container" respawn="true" output="screen" />
-
     <node pkg="arox_docking" type="localize_charging_station.py" name="localize_charging_station" respawn="true" output="screen" />
-
     <node pkg="arox_docking" type="docking_sm.py" name="docking_smach" respawn="true" output="screen" />
-
     <node pkg="arox_docking" type="undocking_sm.py" name="undocking_smach" respawn="true" output="screen" />
-
-  <!-- <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="pointcloud_to_laserscan">
-    <rosparam>
-      target_frame: base_link
-      transform_tolerance: 0.01
-      min_height: 0.3
-      max_height: 2.0
-
-      angle_min: -6.28
-      angle_max: 6.28
-      angle_increment: 0.0001
-
-      scan_time: 0.3333
-      range_min: 0.45
-      range_max: 15.0
-      use_inf: true
-      concurrency_level: 0
-    </rosparam>
-
-    <remap from="scan" to="scan_velodyne" />
-    <remap from="cloud_in" to="velodyne_points" />
-  </node> -->
-
 </launch>

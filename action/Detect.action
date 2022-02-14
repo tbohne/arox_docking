@@ -1,8 +1,8 @@
-# define the goal
+# "partial" or "full" - whether to use a full laser scan or only a narrow section in front of the robot
 string scan_mode
 ---
-# define the result
+# container corners - result of detection process
 geometry_msgs/Point[] corners
 ---
-# define a feedback message
+# feedback message
 float32 percent_complete
