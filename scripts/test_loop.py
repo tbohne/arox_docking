@@ -6,11 +6,10 @@ import rospy
 from arox_docking.msg import DockAction
 
 
-def start_smach():
-    rospy.init_node('start_smach')
+def test_loop():
+    rospy.init_node('test_loop')
 
     for i in range(10):
-
         rospy.loginfo("START DOCKING - UNDOCKING PROCEDURE - iteration: %s", i)
 
         docking_client = actionlib.SimpleActionClient('dock_to_charging_station', DockAction)
@@ -20,7 +19,6 @@ def start_smach():
         rospy.loginfo("START DOCKING PROCEDURE..")
         docking_client.send_goal(goal_msg)
         rospy.loginfo("goal sent, wait for accomplishment")
-
         # success just means that the smach execution has been successful, not the docking itself
         success = docking_client.wait_for_result()
 
@@ -43,11 +41,13 @@ def start_smach():
                     rospy.loginfo("SMACH execution terminated successfully")
                     rospy.loginfo("UNDOCKING PROCEDURE FINISHED: %s", undocking_client.get_result().result_state)
                     if undocking_client.get_result().result_state == "failure":
+                        rospy.loginfo("UNDOCKING FAILURE..")
                         break
                 else:
                     rospy.loginfo("SMACH execution failed: %s", undocking_client.get_goal_status_text())
                     break
             else:
+                rospy.loginfo("DOCKING FAILURE..")
                 break
         else:
             rospy.loginfo("SMACH execution failed: %s", docking_client.get_goal_status_text())
@@ -67,6 +67,6 @@ def start_smach():
 
 if __name__ == '__main__':
     try:
-        start_smach()
+        test_loop()
     except rospy.ROSInterruptException:
         pass

@@ -172,7 +172,7 @@ catkin_install_python(
     scripts/localize_charging_station.py
     scripts/docking_sm.py
     scripts/undocking_sm.py
-    scripts/start_smach.py
+    scripts/test_loop.py
     scripts/visualizer.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
