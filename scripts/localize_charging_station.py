@@ -4,16 +4,15 @@ import math
 import actionlib
 import rospy
 import tf2_ros
+from arox_docking import config
 from arox_docking.msg import DetectAction, DetectGoal, LocalizeAction
 from arox_docking.msg import LocalizeResult
+from arox_docking.msg import PointArray
 from arox_docking.util import transform_pose, dist
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav_msgs.msg import Odometry
-from arox_docking.msg import PointArray
 from tf.transformations import quaternion_from_euler
-from arox_docking import config
-import numpy as np
 
 TF_BUFFER = None
 
@@ -33,32 +32,7 @@ class LocalizationServer:
         self.server.start()
 
     @staticmethod
-    def retrieve_corner_points():
-        """
-        Retrieves the entry corners from the container detection action.
-
-        :return: entry corners of the container
-        """
-        client = actionlib.SimpleActionClient('detect_container', DetectAction)
-        client.wait_for_server()
-        goal = DetectGoal()
-        client.send_goal(goal)
-        client.wait_for_result()
-        res = client.get_result().corners
-
-        if len(res) >= 2:
-            # TODO: possible to detect all 4 corners here, then it should be handled differently
-            #       -> low priority - not yet clear how to receive charging station pos
-            corners = res[:2]
-            first_corner = Point()
-            first_corner.x = corners[0].x
-            first_corner.y = corners[0].y
-            second_corner = Point()
-            second_corner.x = corners[1].x
-            second_corner.y = corners[1].y
-            return first_corner, second_corner
-
-    def create_all_candidate_points(self, source, vector_angle, vector_length):
+    def create_all_candidate_points(source: Point, vector_angle: float, vector_length: float) -> list:
         """
         Creates all candidate points based on the provided source point and the specified vector angle + length.
 
@@ -86,20 +60,15 @@ class LocalizationServer:
         res_candidates.append(candidate_four)
         return res_candidates
 
-    def compute_relative_pose(self, first_corner, second_corner, center):
+    @staticmethod
+    def generate_poses(first_corner: Point, second_corner: Point) -> (PoseStamped, PoseStamped, PoseStamped):
         """
-        Computes a pose relative to the container and the robot's position.
+        Generates poses for the entry corners and charging station.
 
-        :param first_corner: first corner of the container entry
-        :param second_corner: second corner of the container entry
-        :param center: center of the container
-        :return: relative pose
+        :param first_corner: first entry corner
+        :param second_corner: second entry corner
+        :return: entry corner and charging station poses
         """
-        pose = PoseStamped()
-        pose.header.frame_id = "base_link"
-        pose.header.stamp = rospy.Time.now()
-
-        ###################### poses #################
         charger = PoseStamped()
         charger.header.frame_id = "rampB"
         charger.pose.position.x = config.CHARGING_STATION_POS_X
@@ -112,7 +81,21 @@ class LocalizationServer:
         sec.header.frame_id = "base_link"
         sec.pose.position.x = second_corner.x
         sec.pose.position.y = second_corner.y
-        ##############################################
+        return charger, first, sec
+
+    def compute_relative_pose(self, first_corner: Point, second_corner: Point, center: Point) -> PoseStamped:
+        """
+        Computes a pose in front of the charging station relative to the container and the robot's position.
+
+        :param first_corner: first corner of the container entry
+        :param second_corner: second corner of the container entry
+        :param center: center of the container
+        :return: relative pose in front of charging station
+        """
+        pose = PoseStamped()
+        pose.header.frame_id = "base_link"
+        pose.header.stamp = rospy.Time.now()
+        charger, first, sec = self.generate_poses(first_corner, second_corner)
 
         pose_first = transform_pose(TF_BUFFER, first, 'map')
         pose_sec = transform_pose(TF_BUFFER, sec, 'map')
@@ -138,8 +121,7 @@ class LocalizationServer:
         vector_length = math.sqrt(config.CHARGING_STATION_POS_X ** 2 + config.CHARGING_STATION_POS_Y ** 2)
         vector_angle = math.atan(config.CHARGING_STATION_POS_X / config.CHARGING_STATION_POS_Y)
 
-        # math.inf is not feasible in python2
-        curr_dist = float('inf') #math.inf
+        curr_dist = float('inf')
         for p in self.create_all_candidate_points(B, vector_angle, vector_length):
             d = dist(p, center)
             if d < curr_dist:
@@ -150,9 +132,9 @@ class LocalizationServer:
         pose.pose.orientation = Quaternion(*q)
         return pose
 
-    def execute(self, action_input):
+    def execute(self, action_input: LocalizeAction):
         """
-        Executes the action server.
+        Executes the localization action server.
 
         :param action_input: input to be used (entry corners)
         """
@@ -161,7 +143,6 @@ class LocalizationServer:
             result = LocalizeResult()
             pose = self.compute_relative_pose(first_corner, second_corner, center)
             result.station_pos = pose
-
             # visualize result
             point = Point()
             point.x = pose.pose.position.x
@@ -171,7 +152,7 @@ class LocalizationServer:
         else:
             self.server.set_aborted()
 
-    def odom_callback(self, odom):
+    def odom_callback(self, odom: Odometry):
         """
         Is called whenever new odometry data arrives.
 
@@ -186,13 +167,13 @@ class LocalizationServer:
 
 def node():
     """
-    Node to detect the charging station inside of the mobile container.
+    Node to localize the charging station inside of the mobile container.
     """
     global TF_BUFFER
     rospy.init_node("localize_charging_station")
     TF_BUFFER = tf2_ros.Buffer()
     tf2_ros.TransformListener(TF_BUFFER)
-    server = LocalizationServer()
+    LocalizationServer()
     rospy.spin()
 
 
