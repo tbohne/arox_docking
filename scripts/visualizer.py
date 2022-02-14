@@ -18,15 +18,15 @@ class Visualizer:
         self.dbg_pub_base = rospy.Publisher("/docking/dbg_points_base", Marker, queue_size=1)
         self.charging_station_pub = rospy.Publisher("/docking/charging_station", Marker, queue_size=1)
 
-        self.line_sub = rospy.Subscriber("/publish_lines", PointArray, self.publish_detected_lines, queue_size=1)
-        self.corner_sub = rospy.Subscriber("/publish_corners", PointArray, self.publish_corners, queue_size=1)
-        self.center_sub = rospy.Subscriber("/publish_center", Point, self.publish_center_marker, queue_size=1)
-        self.outdoor_sub = rospy.Subscriber("/publish_outdoor", Point, self.publish_outdoor_marker, queue_size=1)
-        self.entry_sub = rospy.Subscriber("/publish_entry", PoseStamped, self.publish_entry, queue_size=1)
-        self.dbg_sub = rospy.Subscriber("/publish_dbg", PointArray, self.publish_dgb_points, queue_size=1)
+        rospy.Subscriber("/publish_lines", PointArray, self.publish_detected_lines, queue_size=1)
+        rospy.Subscriber("/publish_corners", PointArray, self.publish_corners, queue_size=1)
+        rospy.Subscriber("/publish_center", Point, self.publish_center_marker, queue_size=1)
+        rospy.Subscriber("/publish_outdoor", Point, self.publish_outdoor_marker, queue_size=1)
+        rospy.Subscriber("/publish_entry", PoseStamped, self.publish_entry, queue_size=1)
+        rospy.Subscriber("/publish_dbg", PointArray, self.publish_dgb_points, queue_size=1)
         rospy.Subscriber("/publish_dbg_base", PointArray, self.publish_dbg_point_base, queue_size=1)
-        self.charging_station_sub = rospy.Subscriber("/publish_charger", Point, self.publish_charger, queue_size=1)
-        self.clear_sub = rospy.Subscriber("/clear_markers", String, self.clear_markers, queue_size=1)
+        rospy.Subscriber("/publish_charger", Point, self.publish_charger, queue_size=1)
+        rospy.Subscriber("/clear_markers", String, self.clear_markers, queue_size=1)
 
         self.line_marker = None
         self.dbg_marker = None
@@ -60,7 +60,7 @@ class Visualizer:
         self.line_marker.color.g = 1.0
         self.line_marker.color.a = 1.0
 
-    def publish_detected_lines(self, points):
+    def publish_detected_lines(self, points: list):
         """
         Updates and publishes a line marker based on the specified points.
 
@@ -74,7 +74,7 @@ class Visualizer:
 
     def init_dbg_marker(self):
         """
-        Initializes the debug points marker.
+        Initializes the debug points markers.
         """
         self.dbg_marker = Marker()
         self.dbg_marker_base = Marker()
@@ -89,7 +89,7 @@ class Visualizer:
         self.dbg_marker.color.a = self.dbg_marker.color.b = self.dbg_marker.color.g = 1.0
         self.dbg_marker_base.color.a = self.dbg_marker_base.color.r = self.dbg_marker_base.color.b = 1.0
 
-    def publish_dgb_points(self, points):
+    def publish_dgb_points(self, points: list):
         """
         Updates and publishes debugging markers to indicate line detection candidates.
 
@@ -101,7 +101,12 @@ class Visualizer:
             self.dbg_marker.points.extend(points.points)
         self.dbg_pub.publish(self.dbg_marker)
 
-    def publish_dbg_point_base(self, points):
+    def publish_dbg_point_base(self, points: list):
+        """
+        Updates and publishes debugging markers to indicate baseline candidates.
+
+        :param points: base line points
+        """
         if len(points.points) == 0:
             self.dbg_marker_base.points = []
         else:
@@ -121,7 +126,7 @@ class Visualizer:
         self.corner_marker.scale.x = self.corner_marker.scale.y = self.corner_marker.scale.z = 0.4
         self.corner_marker.color.a = self.corner_marker.color.b = 1.0
 
-    def publish_corners(self, intersections):
+    def publish_corners(self, intersections: PointArray):
         """
         Generates and publishes markers for the detected container corners.
 
@@ -143,7 +148,7 @@ class Visualizer:
         self.center_marker.scale.x = self.center_marker.scale.y = self.center_marker.scale.z = 0.4
         self.center_marker.color.a = self.center_marker.color.g = self.center_marker.color.r = 1.0
 
-    def publish_center_marker(self, center):
+    def publish_center_marker(self, center: Point):
         """
         Generates and publishes a marker for the center point of the container.
 
@@ -172,7 +177,7 @@ class Visualizer:
         self.charging_maker.color.r = 0.33
         self.charging_maker.color.g = self.charging_maker.color.b = 1.0
 
-    def publish_charger(self, point):
+    def publish_charger(self, point: Point):
         """
         Generates and publishes a marker for the charging station inside the container.
 
@@ -202,7 +207,7 @@ class Visualizer:
         self.outdoor_marker.color.g = 0.0
         self.outdoor_marker.color.b = 0.9
 
-    def publish_outdoor_marker(self, outdoor):
+    def publish_outdoor_marker(self, outdoor: Point):
         """
         Generates and publishes a marker for a point in front of the container entry.
 
@@ -233,7 +238,7 @@ class Visualizer:
         self.entry_marker.color.b = 1.0
         self.entry_marker.color.a = 1.0
 
-    def publish_entry(self, pose):
+    def publish_entry(self, pose: PoseStamped):
         """
         Generates and publishes an arrow indicating the position and direction of the container entry.
 
@@ -248,11 +253,11 @@ class Visualizer:
             self.entry_marker.pose.orientation = pose.pose.orientation
         self.entry_pub.publish(self.entry_marker)
 
-    def clear_markers(self, str):
+    def clear_markers(self, msg: String):
         """
         Resets the markers.
 
-        :param str: optional message
+        :param msg: optional message
         """
         lst = PointArray()
         lst.points = []

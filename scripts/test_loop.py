@@ -2,11 +2,11 @@
 
 import actionlib
 import rospy
-
-from arox_docking.msg import DockAction, UndockAction, DockGoal, UndockGoal
 from arox_docking import config
-from nav_msgs.msg import Odometry
+from arox_docking.msg import DockAction, UndockAction, DockGoal, UndockGoal
 from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import Odometry
+
 
 def test_loop():
     rospy.init_node('test_loop')
