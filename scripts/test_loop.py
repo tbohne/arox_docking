@@ -3,22 +3,34 @@
 import actionlib
 import rospy
 
-from arox_docking.msg import DockAction
+from arox_docking.msg import DockAction, UndockAction, DockGoal, UndockGoal
 from arox_docking import config
-
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseStamped
 
 def test_loop():
     rospy.init_node('test_loop')
+
+    robot_pose = None
+    try:
+        # create a new subscription to the topic, receive one message, then unsubscribe
+        odom = rospy.wait_for_message("/odometry/filtered_odom", Odometry, timeout=10)
+        pose = PoseStamped()
+        pose.header.frame_id = odom.header.frame_id
+        pose.pose = odom.pose.pose
+        robot_pose = pose
+    except rospy.ROSException as e:
+        rospy.loginfo("problem retrieving robot pose: %s", e)
 
     for i in range(config.TEST_RUNS):
         rospy.loginfo("START DOCKING - UNDOCKING PROCEDURE - iteration: %s", i)
 
         docking_client = actionlib.SimpleActionClient('dock_to_charging_station', DockAction)
-        goal_msg = DockAction().action_goal
-        goal_msg.goal = "custom_goal"
+        goal = DockGoal()
+        goal.goal = "custom_goal"
         docking_client.wait_for_server()
         rospy.loginfo("START DOCKING PROCEDURE..")
-        docking_client.send_goal(goal_msg)
+        docking_client.send_goal(goal)
         rospy.loginfo("goal sent, wait for accomplishment")
         # success just means that the smach execution has been successful, not the docking itself
         success = docking_client.wait_for_result()
@@ -30,12 +42,12 @@ def test_loop():
             if docking_client.get_result().result_state == "success":
                 rospy.loginfo("sleeping a moment..")
                 rospy.sleep(10)
-                undocking_client = actionlib.SimpleActionClient('undock_from_charging_station', DockAction)
-                goal_msg = DockAction().action_goal
-                goal_msg.goal = "custom_goal"
+                undocking_client = actionlib.SimpleActionClient('undock_from_charging_station', UndockAction)
+                goal = UndockGoal()
+                goal.ramp_alignment_pose = robot_pose
                 undocking_client.wait_for_server()
                 rospy.loginfo("START UNDOCKING PROCEDURE..")
-                undocking_client.send_goal(goal_msg)
+                undocking_client.send_goal(goal)
                 rospy.loginfo("goal sent, wait for accomplishment")
                 success = undocking_client.wait_for_result()
                 if success:
