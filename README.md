@@ -64,6 +64,7 @@
     - branch: `master`
 - [gazebo_langsenkamp](https://git.ni.dfki.de/zla/gazebo_langsenkamp): Langsenkamp world (test field)
     - branch: `feature_lta_layout`
+- *[Since the docker container still uses python2, there is a python2 compatible branch `feature/python2_compatible`]*
 
 ## Usage
 
