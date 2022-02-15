@@ -46,7 +46,7 @@ class DetectionServer:
         # subscribe to robot pose
         self.pose_sub = rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
 
-    def execute(self, goal):
+    def execute(self, goal: DetectAction):
         """
         Executes the container detection action server.
 
@@ -88,7 +88,7 @@ class DetectionServer:
             self.pose_sub.unregister()
             self.server.set_aborted()
 
-    def prepare_container_detection(self, scan):
+    def prepare_container_detection(self, scan: LaserScan):
         """
         Computes the 2D Hough transform of the laser scan and initiates the container detection.
 
@@ -124,7 +124,7 @@ class DetectionServer:
 
         self.detect_container(hough_space, points)
 
-    def line_dist_to_robot(self, point_list):
+    def line_dist_to_robot(self, point_list: list) -> float:
         """
         Computes the distance between the considered line (avg point) and the robot.
 
@@ -141,7 +141,7 @@ class DetectionServer:
         self.line_pub.publish([])
         self.corner_pub.publish([])
 
-    def visualize_baseline(self, point_list, theta_base, radius):
+    def visualize_baseline(self, point_list: list, theta_base: int, radius: float):
         """
         Visualizes the baseline candidate in rviz.
 
@@ -154,9 +154,9 @@ class DetectionServer:
         p1, p2 = compute_line_points(theta_base, radius)
         self.line_pub.publish([p1, p2])
 
-    def detect_remaining_sides(self, line_params, hough, points, tested_lines,
-                               base_avg, theta_base, avg_points, line_lengths,
-                               dynamic_acc_thresh):
+    def detect_remaining_sides(self, line_params: list, hough: np.array, points: dict, tested_lines: list,
+                               base_avg: Point, theta_base: int, avg_points: list, line_lengths: list,
+                               dynamic_acc_thresh: int):
         """
         Detects the remaining 2-3 container sides that correspond to the considered baseline.
 
@@ -223,7 +223,7 @@ class DetectionServer:
                 detected_reasonable_line(point_list, theta_base, theta, avg_points)
             hough[c][r] = 0
 
-    def detect_container(self, hough_space, points):
+    def detect_container(self, hough_space: np.array, points: dict):
         """
         Detects the container based on lines in the specified Hough space.
 
@@ -286,7 +286,7 @@ class DetectionServer:
                 break
         rospy.loginfo("STOPPING - HOUGH MAX: %s, ACC THRESH: %s", hough_space.max(), dynamic_acc_thresh_based_on_dist)
 
-    def publish_detected_container(self, found_line_params):
+    def publish_detected_container(self, found_line_params: list) -> list:
         """
         Publishes the detected corners of the container and returns them.
 
@@ -297,7 +297,7 @@ class DetectionServer:
         self.corner_pub.publish(container_corners)
         return container_corners
 
-    def odom_callback(self, odom):
+    def odom_callback(self, odom: Odometry):
         """
         Is called whenever new odometry data arrives.
 
@@ -310,7 +310,7 @@ class DetectionServer:
         self.robot_pos = pose_stamped.pose.position
 
 
-def get_theta_by_index(idx):
+def get_theta_by_index(idx: int) -> int:
     """
     Returns the theta value corresponding to the specified index (based on discretization).
 
@@ -320,7 +320,7 @@ def get_theta_by_index(idx):
     return idx * config.DELTA_THETA + config.THETA_MIN
 
 
-def get_radius_by_index(idx):
+def get_radius_by_index(idx: int) -> float:
     """
     Returns the radius value corresponding to the specified index (based on discretization).
 
@@ -330,7 +330,7 @@ def get_radius_by_index(idx):
     return idx * config.DELTA_RADIUS + config.RADIUS_MIN
 
 
-def compute_y_coordinate(theta, radius, x):
+def compute_y_coordinate(theta: int, radius: float, x: float) -> float:
     """
     Computes the y-coordinate of a given point based on the x-coordinate, theta, and radius.
 
@@ -342,7 +342,7 @@ def compute_y_coordinate(theta, radius, x):
     return (radius - np.cos(theta * np.pi / 180.0) * x) / np.sin(theta * np.pi / 180.0)
 
 
-def retrieve_best_line(hough_space):
+def retrieve_best_line(hough_space: np.array) -> (int, int):
     """
     Retrieves the indices of the best line (peak) from the specified hough space.
 
@@ -355,7 +355,7 @@ def retrieve_best_line(hough_space):
     return c, r
 
 
-def compute_line_points(theta, radius):
+def compute_line_points(theta: int, radius: float) -> (Point, Point):
     """
     Computes two points representing a detected line.
 
@@ -377,7 +377,7 @@ def compute_line_points(theta, radius):
     return p1, p2
 
 
-def median_filter(points_on_line):
+def median_filter(points_on_line: np.array) -> list:
     """
     Filters the points on the specified line based on their distances to the median.
 
@@ -399,7 +399,7 @@ def median_filter(points_on_line):
     return res
 
 
-def compute_avg_point(point_list):
+def compute_avg_point(point_list: list) -> Point:
     """
     Computes the average of the specified list of points.
 
@@ -413,7 +413,7 @@ def compute_avg_point(point_list):
     return avg
 
 
-def compute_avg_and_max_distance(point_list):
+def compute_avg_and_max_distance(point_list: list) -> (float, float):
     """
     Computes the average and maximum distance between different points in the specified list.
 
@@ -426,7 +426,7 @@ def compute_avg_and_max_distance(point_list):
     return 0.0, 0.0
 
 
-def reasonable_dist_to_already_detected_lines(point_list, avg_points):
+def reasonable_dist_to_already_detected_lines(point_list: list, avg_points: list) -> bool:
     """
     Determines whether the detected line specified by the list of points has a reasonable distance
     to previously detected lines represented by the list of average points.
@@ -447,7 +447,7 @@ def reasonable_dist_to_already_detected_lines(point_list, avg_points):
     return True
 
 
-def detect_jumps(points_on_line):
+def detect_jumps(points_on_line: list) -> bool:
     """
     Detects jumps in the sorted lists of x- and y-values of a detected line.
 
@@ -467,7 +467,7 @@ def detect_jumps(points_on_line):
     return jump_cnt >= config.JUMP_LIMIT
 
 
-def detected_reasonable_line(point_list, theta_base, theta, avg_points):
+def detected_reasonable_line(point_list: list, theta_base: int, theta: int, avg_points: list) -> bool:
     """
     Determines whether the detected line represented by the given list of points fulfills several
     criteria checking for its plausibility in terms of being a feasible container side.
@@ -508,7 +508,7 @@ def detected_reasonable_line(point_list, theta_base, theta, avg_points):
     return reasonable_len and reasonable_dist and reasonable_avg_dist and orthogonal_or_parallel_to_base and not jumps
 
 
-def compute_intersection_points(found_line_params):
+def compute_intersection_points(found_line_params: list) -> list:
     """
     Computes intersection points for the specified lines.
 
@@ -528,7 +528,7 @@ def compute_intersection_points(found_line_params):
     return intersections
 
 
-def update_avg_points(avg_points, point_list):
+def update_avg_points(avg_points: list, point_list: list):
     """
     Saves the average point for each line.
 
@@ -541,7 +541,7 @@ def update_avg_points(avg_points, point_list):
     avg_points.append(avg)
 
 
-def already_found_line(found_lines, radius, theta):
+def already_found_line(found_lines: list, radius: float, theta: int) -> bool:
     """
     Checks whether the line (or a very similar line) represented by radius and theta was found before.
 
@@ -560,7 +560,7 @@ def already_found_line(found_lines, radius, theta):
     return False
 
 
-def already_tested_line(tested_lines, radius, theta):
+def already_tested_line(tested_lines: list, radius: float, theta: int) -> bool:
     """
     Checks whether the line (or a very similar line) represented by radius and theta was considered before.
 
@@ -579,7 +579,7 @@ def already_tested_line(tested_lines, radius, theta):
     return False
 
 
-def container_front_or_back_detected(length):
+def container_front_or_back_detected(length: float) -> bool:
     """
     Returns whether the specified length corresponds to the container front / back.
 
@@ -590,7 +590,7 @@ def container_front_or_back_detected(length):
            <= length + config.CONTAINER_WIDTH * config.EPSILON
 
 
-def intersection(line_one, line_two):
+def intersection(line_one: (float, float), line_two: (float, float)) -> (float, float):
     """
     Computes the intersection between the specified lines.
 
@@ -614,7 +614,7 @@ def intersection(line_one, line_two):
     return x, y
 
 
-def feasible_distances(detected, theta, radius):
+def feasible_distances(detected: list, theta: int, radius: float) -> bool:
     """
     Measures the distances between the newly detected line and the previously detected ones parallel to the new one
     and determines feasibility based on the polar coordinate distances.
@@ -643,7 +643,7 @@ def feasible_distances(detected, theta, radius):
     return True
 
 
-def feasible_angles(detected, theta):
+def feasible_angles(detected: list, theta: int) -> bool:
     """
     There can only be two lines with roughly the same angle belonging to the container. This fact is used in order
     to determine whether the newly considered line could still be part of the container candidate.
@@ -662,7 +662,7 @@ def feasible_angles(detected, theta):
     return True
 
 
-def feasible_orientation(detected, radius, theta):
+def feasible_orientation(detected: list, radius: float, theta: int) -> bool:
     """
     Determines whether the newly detected line has a feasible orientation towards the previously detected ones.
 
@@ -681,7 +681,7 @@ def feasible_orientation(detected, radius, theta):
     return True
 
 
-def feasible_intersections(detected, radius, theta):
+def feasible_intersections(detected: list, radius: float, theta: int) -> bool:
     """
     Determines whether the newly detected line has feasible intersections with the previously detected ones.
 
@@ -740,7 +740,7 @@ def feasible_intersections(detected, radius, theta):
     return True
 
 
-def feasible_line_length(line_lengths, curr_length):
+def feasible_line_length(line_lengths: list, curr_length: float) -> bool:
     """
     Determines whether the length of the currently considered container side candidate corresponds to
     the already detected ones and could reasonably represent a side of the container.
@@ -773,7 +773,7 @@ def feasible_line_length(line_lengths, curr_length):
     return True
 
 
-def line_corresponds_to_already_detected_lines(theta, detected, radius):
+def line_corresponds_to_already_detected_lines(theta: int, detected: list, radius: float) -> bool:
     """
     Determines whether the newly detected line corresponds to the previously detected lines in the sense that the
     combination of them satisfies the shape criteria of the container.
@@ -795,7 +795,7 @@ def line_corresponds_to_already_detected_lines(theta, detected, radius):
         detected, radius, theta) and feasible_intersections(detected, radius, theta)
 
 
-def retrieve_container_corners(found_line_params):
+def retrieve_container_corners(found_line_params: list) -> list:
     """
     Retrieves the container corners based on the found line parameters.
 
@@ -814,7 +814,7 @@ def retrieve_container_corners(found_line_params):
     return container_corners
 
 
-def determine_thresh_based_on_dist_to_robot(dist_to_robot):
+def determine_thresh_based_on_dist_to_robot(dist_to_robot: float) -> int:
     """
     Determines a dynamic threshold for the accumulator array based on the robot's distance to the considered shape.
 
@@ -836,7 +836,7 @@ def determine_thresh_based_on_dist_to_robot(dist_to_robot):
         return 5
 
 
-def get_points_from_scan(scan):
+def get_points_from_scan(scan: LaserScan) -> list:
     """
     Retrieves the points from the specified laser scan.
 

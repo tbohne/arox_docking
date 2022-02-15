@@ -32,7 +32,7 @@ class LocalizationServer:
         self.server.start()
 
     @staticmethod
-    def generate_poses(first_corner, second_corner):
+    def generate_poses(first_corner: Point, second_corner: Point) -> (PoseStamped, PoseStamped, PoseStamped):
         """
         Generates poses for the entry corners and charging station.
 
@@ -54,7 +54,7 @@ class LocalizationServer:
         sec.pose.position.y = second_corner.y
         return charger, first, sec
 
-    def compute_relative_pose(self, first_corner, second_corner, center):
+    def compute_relative_pose(self, first_corner: Point, second_corner: Point, center: Point) -> PoseStamped:
         """
         Computes a pose in front of the charging station relative to the container and the robot's position.
 
@@ -109,7 +109,7 @@ class LocalizationServer:
         pose.pose.orientation = Quaternion(*q)
         return pose
 
-    def execute(self, action_input):
+    def execute(self, action_input: LocalizeAction):
         """
         Executes the localization action server.
 
@@ -129,7 +129,7 @@ class LocalizationServer:
         else:
             self.server.set_aborted()
 
-    def odom_callback(self, odom):
+    def odom_callback(self, odom: Odometry):
         """
         Is called whenever new odometry data arrives.
 

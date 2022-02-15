@@ -28,7 +28,7 @@ class ContainerProximity(smach.State):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'])
 
     @staticmethod
-    def execute(userdata):
+    def execute(userdata: smach.user_data.Remapper) -> str:
         """
         Executes the 'CONTAINER_PROXIMITY' state.
 
@@ -55,7 +55,7 @@ class DetectContainer(smach.State):
         self.robot_pose = None
         self.abortion_cnt = 0
 
-    def odom_callback(self, odom):
+    def odom_callback(self, odom: Odometry):
         """
         Is called whenever new odometry data arrives.
 
@@ -67,7 +67,7 @@ class DetectContainer(smach.State):
         pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
         self.robot_pose = pose_stamped.pose
 
-    def execute(self, userdata):
+    def execute(self, userdata: smach.user_data.Remapper) -> str:
         """
         Executes the 'DETECT_CONTAINER' state.
 
@@ -117,7 +117,7 @@ class DetectContainer(smach.State):
         return 'aborted'
 
     @staticmethod
-    def compute_entry_candidates(first, sec, base_point):
+    def compute_entry_candidates(first: Point, sec: Point, base_point: Point) -> (Point, Point):
         """
         Computes candidate entry points.
 
@@ -137,7 +137,7 @@ class DetectContainer(smach.State):
         entry_candidate_two.y = base_point.y - res_vec[0] * config.DIST_TO_CONTAINER
         return entry_candidate_one, entry_candidate_two
 
-    def determine_container_entry(self, points):
+    def determine_container_entry(self, points: list) -> (Point, Point):
         """
         Determines the container entry based on the detected corners and the average line points.
 
@@ -192,7 +192,7 @@ class DetectContainer(smach.State):
         return base_point, entry_candidate_two
 
     @staticmethod
-    def get_container_entry_with_orientation(container_entry, angle):
+    def get_container_entry_with_orientation(container_entry: Point, angle: float) -> PoseStamped:
         """
         Generates the pose in front of the container entry where the robot should move to (as pose stamped).
 
@@ -222,7 +222,7 @@ class AlignRobotToRamp(smach.State):
 
         self.entry_pub = rospy.Publisher("/publish_entry", PoseStamped, queue_size=1)
 
-    def execute(self, userdata):
+    def execute(self, userdata: smach.user_data.Remapper) -> str:
         """
         Executes the 'ALIGN_ROBOT_TO_RAMP' state.
 
@@ -289,7 +289,7 @@ class DriveIntoContainer(smach.State):
                 rate.sleep()
             twist.linear.x = 3.0
 
-    def odom_callback(self, odom):
+    def odom_callback(self, odom: Odometry):
         """
         Is called whenever new odometry data arrives.
 
@@ -302,7 +302,7 @@ class DriveIntoContainer(smach.State):
         pose_stamped.header.frame_id = 'base_link'
         self.robot_pose = pose_stamped
 
-    def compute_entry_from_four_corners(self, container_corners):
+    def compute_entry_from_four_corners(self, container_corners: list) -> (Point, Point):
         """
         Computes the entry corners based on the four detected corners and the robot's position.
 
@@ -329,7 +329,7 @@ class DriveIntoContainer(smach.State):
         return first, sec
 
     @staticmethod
-    def get_pose_from_point(point):
+    def get_pose_from_point(point: Point) -> PoseStamped:
         """
         Transforms a given point into a pose.
 
@@ -343,7 +343,7 @@ class DriveIntoContainer(smach.State):
         return pose
 
     @staticmethod
-    def detect_container():
+    def detect_container() -> list:
         """
         Attempts to detect the container from the improved position (aligned in front of ramp).
 
@@ -358,7 +358,7 @@ class DriveIntoContainer(smach.State):
         client.wait_for_result()
         return client.get_result().corners
 
-    def compute_center_with_orientation(self, center):
+    def compute_center_with_orientation(self, center: Point) -> PoseStamped:
         """
         Computes center position with orientation.
 
@@ -371,7 +371,7 @@ class DriveIntoContainer(smach.State):
             angle = math.atan2(self.robot_pose.pose.position.y - center.y, self.robot_pose.pose.position.x - center.x)
         return self.compute_center(center, angle)
 
-    def execute(self, userdata):
+    def execute(self, userdata: smach.user_data.Remapper) -> str:
         """
         Executes the 'DRIVE_INTO_CONTAINER' state.
 
@@ -438,7 +438,7 @@ class DriveIntoContainer(smach.State):
         return 'aborted'
 
     @staticmethod
-    def drive_to(pose):
+    def drive_to(pose: PoseStamped) -> bool:
         """
         Navigates the robot to the specified pose.
 
@@ -465,7 +465,7 @@ class DriveIntoContainer(smach.State):
         return True
 
     @staticmethod
-    def compute_center(center_point, angle):
+    def compute_center(center_point: Point, angle: float) -> PoseStamped:
         """
         Computes the center pose (position + orientation).
 
@@ -492,7 +492,7 @@ class LocalizeChargingStation(smach.State):
                              output_keys=['localize_charging_station_output', 'sm_output'])
 
     @staticmethod
-    def execute(userdata):
+    def execute(userdata: smach.user_data.Remapper) -> str:
         """
         Executes the 'LOCALIZE_CHARGING_STATION' state.
 
@@ -533,7 +533,7 @@ class AlignRobotToChargingStation(smach.State):
         self.robot_pose = None
         self.init_pose = None
 
-    def odom_callback(self, odom):
+    def odom_callback(self, odom: Odometry):
         """
         Is called whenever new odometry data arrives.
 
@@ -558,7 +558,7 @@ class AlignRobotToChargingStation(smach.State):
             rate.sleep()
 
     @staticmethod
-    def drive_to(pose):
+    def drive_to(pose: PoseStamped) -> int:
         """
         Navigates the robot to the specified pose.
 
@@ -581,7 +581,7 @@ class AlignRobotToChargingStation(smach.State):
         move_base_client.wait_for_result()
         return move_base_client.get_result().outcome
 
-    def execute(self, userdata):
+    def execute(self, userdata: smach.user_data.Remapper) -> str:
         """
         Executes the 'ALIGN_ROBOT_TO_CHARGING_STATION' state.
 
@@ -611,7 +611,7 @@ class Dock(smach.State):
 
         self.clear_markers_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
-    def execute(self, userdata):
+    def execute(self, userdata: smach.user_data.Remapper) -> str:
         """
         Executes the 'DOCK' state.
 
