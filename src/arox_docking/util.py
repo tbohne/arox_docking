@@ -8,7 +8,7 @@ from arox_docking.msg import DockAction
 from geometry_msgs.msg import Point, PoseStamped
 
 
-def get_failure_msg() -> DockAction:
+def get_failure_msg():
     """
     Generates a docking failure message.
 
@@ -19,7 +19,7 @@ def get_failure_msg() -> DockAction:
     return msg
 
 
-def get_success_msg() -> DockAction:
+def get_success_msg():
     """
     Generates a docking success message.
 
@@ -30,7 +30,7 @@ def get_success_msg() -> DockAction:
     return msg
 
 
-def dist(p1: Point, p2: Point) -> float:
+def dist(p1, p2):
     """
     Computes the Euclidean distance between the specified points.
 
@@ -41,7 +41,7 @@ def dist(p1: Point, p2: Point) -> float:
     return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
 
 
-def transform_pose(tf_buffer: tf2_ros.Buffer, pose_stamped: PoseStamped, target_frame: str) -> PoseStamped:
+def transform_pose(tf_buffer, pose_stamped, target_frame):
     """
     Transforms the input pose to the specified target frame.
 
