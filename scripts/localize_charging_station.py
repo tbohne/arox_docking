@@ -32,35 +32,6 @@ class LocalizationServer:
         self.server.start()
 
     @staticmethod
-    def create_all_candidate_points(source, vector_angle, vector_length):
-        """
-        Creates all candidate points based on the provided source point and the specified vector angle + length.
-
-        :param source: source point to start from
-        :param vector_angle: angle to target
-        :param vector_length: length to target
-        :return: candidate points
-        """
-        res_candidates = []
-        candidate_one = Point()
-        candidate_one.x = source.x + math.cos(vector_angle) * vector_length
-        candidate_one.y = source.y + math.sin(vector_angle) * vector_length
-        res_candidates.append(candidate_one)
-        candidate_two = Point()
-        candidate_two.x = source.x - math.cos(vector_angle) * vector_length
-        candidate_two.y = source.y - math.sin(vector_angle) * vector_length
-        res_candidates.append(candidate_two)
-        candidate_three = Point()
-        candidate_three.x = source.x + math.cos(vector_angle) * vector_length
-        candidate_three.y = source.y - math.sin(vector_angle) * vector_length
-        res_candidates.append(candidate_three)
-        candidate_four = Point()
-        candidate_four.x = source.x - math.cos(vector_angle) * vector_length
-        candidate_four.y = source.y + math.sin(vector_angle) * vector_length
-        res_candidates.append(candidate_four)
-        return res_candidates
-
-    @staticmethod
     def generate_poses(first_corner, second_corner):
         """
         Generates poses for the entry corners and charging station.
@@ -103,31 +74,37 @@ class LocalizationServer:
 
         d1 = dist(charger.pose.position, pose_first.pose.position)
         d2 = dist(charger.pose.position, pose_sec.pose.position)
-        if d1 < d2:
-            pose.pose.position = first.pose.position
-            direction_vector = (second_corner.x - first_corner.x, second_corner.y - first_corner.y)
-            A = sec.pose.position
-        else:
-            pose.pose.position = sec.pose.position
-            direction_vector = (first_corner.x - second_corner.x, first_corner.y - second_corner.y)
-            A = first.pose.position
-        angle = math.atan2(direction_vector[1], direction_vector[0])
 
-        B = pose.pose.position
+        # just call the one that is closer point B
+        if d1 <= d2:
+            A = second_corner
+            B = first_corner
+        else:
+            A = first_corner
+            B = second_corner
+
+        BA = (A.x - B.x, A.y - B.y)
+        BA_length = math.sqrt(BA[0] ** 2 + BA[1] ** 2)
+
         P = Point()
         P.x = (A.x + B.x) / 2
         P.y = (A.y + B.y) / 2
 
-        vector_length = math.sqrt(config.CHARGING_STATION_POS_X ** 2 + config.CHARGING_STATION_POS_Y ** 2)
-        vector_angle = math.atan(config.CHARGING_STATION_POS_X / config.CHARGING_STATION_POS_Y)
+        PC = (center.x - P.x, center.y - P.y)
+        PC_length = math.sqrt(PC[0] ** 2 + PC[1] ** 2)
 
-        curr_dist = float('inf')
-        for p in self.create_all_candidate_points(B, vector_angle, vector_length):
-            d = dist(p, center)
-            if d < curr_dist:
-                curr_dist = d
-                pose.pose.position = p
+        # compute intermediate point in BA direction (shift by CHARGING_STATION_POS_X)
+        intermediate_point = Point()
+        intermediate_point.x = B.x + BA[0] / BA_length * config.CHARGING_STATION_POS_X
+        intermediate_point.y = B.y + BA[1] / BA_length * config.CHARGING_STATION_POS_X
 
+        # from intermediate point, shift in PC direction by CHARGING_STATION_POS_Y
+        final_point = Point()
+        final_point.x = intermediate_point.x + PC[0] / PC_length * config.CHARGING_STATION_POS_Y
+        final_point.y = intermediate_point.y + PC[1] / PC_length * config.CHARGING_STATION_POS_Y
+
+        pose.pose.position = final_point
+        angle = math.atan2(BA[1], BA[0])
         q = quaternion_from_euler(0, 0, angle)
         pose.pose.orientation = Quaternion(*q)
         return pose
