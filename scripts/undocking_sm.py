@@ -28,7 +28,7 @@ class InsideContainer(smach.State):
         smach.State.__init__(self, outcomes=['succeeded', 'aborted'])
 
     @staticmethod
-    def execute(userdata: smach.user_data.Remapper) -> str:
+    def execute(userdata):
         """
         Executes the 'INSIDE_CONTAINER' state.
 
@@ -54,7 +54,7 @@ class DetectEntry(smach.State):
         rospy.Subscriber("/odometry/filtered_odom", Odometry, self.odom_callback, queue_size=1)
         self.outdoor_pub = rospy.Publisher("/publish_outdoor", Point, queue_size=1)
 
-    def odom_callback(self, odom: Odometry):
+    def odom_callback(self, odom):
         """
         Is called whenever new odometry data arrives.
 
@@ -66,7 +66,7 @@ class DetectEntry(smach.State):
         pose_stamped = transform_pose(TF_BUFFER, pose, 'base_link')
         self.robot_pose = pose_stamped.pose
 
-    def execute(self, userdata: smach.user_data.Remapper) -> str:
+    def execute(self, userdata):
         """
         Executes the 'DETECT_ENTRY' state.
 
@@ -118,7 +118,7 @@ class DetectEntry(smach.State):
         return 'aborted'
 
     @staticmethod
-    def front_or_back_detected(first_corner: Point, second_corner: Point) -> bool:
+    def front_or_back_detected(first_corner, second_corner):
         """
         Determines whether the container front or back was detected (not a side).
 
@@ -129,7 +129,7 @@ class DetectEntry(smach.State):
         return config.CONTAINER_WIDTH + config.CONTAINER_WIDTH * config.EPSILON >= dist(first_corner, second_corner) \
                >= config.CONTAINER_WIDTH - config.CONTAINER_WIDTH * config.EPSILON
 
-    def compute_direction_vector(self, first_corner: Point, second_corner: Point) -> (float, float):
+    def compute_direction_vector(self, first_corner, second_corner):
         """
         Computes an appropriate direction vector for the two corners.
 
@@ -142,7 +142,7 @@ class DetectEntry(smach.State):
         else:
             return first_corner.x - second_corner.x, first_corner.y - second_corner.y
 
-    def determine_external_point(self, base_point: Point, res_vec: (float, float), corners: list, corner_indices: list) -> Point:
+    def determine_external_point(self, base_point, res_vec, corners, corner_indices):
         """
         Computes a point outside of the container.
 
@@ -179,7 +179,7 @@ class DetectEntry(smach.State):
                 return outdoor_candidate_one
             return outdoor_candidate_two
 
-    def determine_point_in_front_of_container(self, corners: list) -> Point:
+    def determine_point_in_front_of_container(self, corners):
         """
         Computes a point in front of the container.
 
@@ -235,7 +235,7 @@ class DetectEntry(smach.State):
         return self.determine_external_point(base_point, res_vec, corners, front_corner_indices)
 
     @staticmethod
-    def compute_outdoor(outdoor_point: Point, angle: float) -> PoseStamped:
+    def compute_outdoor(outdoor_point, angle):
         """
         Computes the outdoor pose (position + orientation).
 
@@ -268,7 +268,7 @@ class DriveOutOfContainer(smach.State):
         self.clear_markers_pub = rospy.Publisher("/clear_markers", String, queue_size=1)
 
     @staticmethod
-    def drive_to(pose: PoseStamped) -> bool:
+    def drive_to(pose):
         """
         Drives the robot to the specified pose (position + orientation).
 
@@ -294,7 +294,7 @@ class DriveOutOfContainer(smach.State):
             return False
         return True
 
-    def execute(self, userdata: smach.user_data.Remapper) -> str:
+    def execute(self, userdata):
         """
         Executes the 'DRIVE_OUT_OF_CONTAINER' state.
 
