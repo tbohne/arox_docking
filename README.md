@@ -1,4 +1,6 @@
-# Autonomous Docking: AROX -> Inductive Charging Station
+# Autonomous Docking: AROX (Autonomous Robotic Experimentation Platform) -> Inductive Charging Station
+
+Detailed background information is available in my [**master's thesis**](https://github.com/tbohne/msc) (chapter 4.2 "Autonomous Energy Supply").
 
 ## Architecture
 
@@ -81,7 +83,7 @@
 
 The docking / undocking state machines provide implementations of the `SimpleActionServer` (cf. http://wiki.ros.org/actionlib).  
 **Docking Example**
-```
+```python
 docking_client = actionlib.SimpleActionClient('dock_to_charging_station', DockAction)
 goal = DockGoal()
 goal.goal = "custom_goal"
@@ -89,7 +91,7 @@ docking_client.wait_for_server()
 docking_client.send_goal(goal)
 ```
 **Undocking Example**
-```
+```python
 undocking_client = actionlib.SimpleActionClient('undock_from_charging_station', UndockAction)
 goal = UndockGoal()
 goal.ramp_alignment_pose = robot_pose  # optional
