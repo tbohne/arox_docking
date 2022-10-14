@@ -272,6 +272,7 @@ class DriveIntoContainer(smach.State):
         rospy.Subscriber("/odometry/gps", Odometry, self.odom_callback, queue_size=1)
         self.center_pub = rospy.Publisher("/publish_center", Point, queue_size=1)
         self.cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
+        self.gps_toggle_pub = rospy.Publisher('/toggle_gps', String, queue_size=1)
         self.robot_pose = None
         self.init_pose = None
 
@@ -281,13 +282,13 @@ class DriveIntoContainer(smach.State):
         """
         rospy.loginfo("moving robot back and forth - minor relocation..")
         twist = Twist()
-        twist.linear.x = -3.0
+        twist.linear.x = -0.3
         rate = rospy.Rate(4)
         for _ in range(2):
             for _ in range(3):
                 self.cmd_vel_pub.publish(twist)
                 rate.sleep()
-            twist.linear.x = 3.0
+            twist.linear.x = 0.3
 
     def odom_callback(self, odom: Odometry):
         """
@@ -379,6 +380,9 @@ class DriveIntoContainer(smach.State):
         :return: outcome of the execution (success / failure)
         """
         rospy.loginfo('executing state DRIVE_INTO_CONTAINER')
+        # temporarily deactivate GPS signals during in-container navigation (improves localization)
+        self.gps_toggle_pub.publish("")
+
         if self.robot_pose:
             self.init_pose = transform_pose(TF_BUFFER, self.robot_pose, "map")
 
@@ -551,7 +555,7 @@ class AlignRobotToChargingStation(smach.State):
         """
         rospy.loginfo("moving backwards to wall..")
         twist = Twist()
-        twist.linear.x = -3.0
+        twist.linear.x = -0.3
         rate = rospy.Rate(4)
         for _ in range(3):
             self.cmd_vel_pub.publish(twist)

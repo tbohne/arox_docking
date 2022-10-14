@@ -1,8 +1,6 @@
 <?xml version="1.0" ?>
 
 <launch>
-    <param name="/use_sim_time" value="true" />
-
     <node pkg="arox_docking" type="visualizer.py" name="visualizer" respawn="true" output="screen" />
     <node pkg="arox_docking" type="detect_container.py" name="detect_container" respawn="true" output="screen" />
     <node pkg="arox_docking" type="localize_charging_station.py" name="localize_charging_station" respawn="true" output="screen" />
