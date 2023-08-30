@@ -1,7 +1,7 @@
 # Autonomous Docking: AROX (Autonomous Robotic Experimentation Platform) -> Inductive Charging Station
 
 ![unstable](https://img.shields.io/badge/stability-unstable-orange)
- [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Detailed background information is available in my [**master's thesis**](https://github.com/tbohne/msc) (chapter 4.2 "Autonomous Energy Supply").
 
