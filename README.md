@@ -1,10 +1,16 @@
 # Autonomous Docking: AROX (Autonomous Robotic Experimentation Platform) -> Inductive Charging Station
 
+![unstable](https://img.shields.io/badge/stability-unstable-orange)
+ [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Detailed background information is available in my [**master's thesis**](https://github.com/tbohne/msc) (chapter 4.2 "Autonomous Energy Supply").
 
 ## Architecture
+![](img/docking_smach.png)
 
-![](docking_smach.png)
+## Autonomous Energy Supply
+(a) Robot facing base station (b) Base station perception based on lidar data (c) Successful detection of base station shape:
+![](img/docking_vis.png)
 
 - <u>Assumed:</u> **State: CONTAINER_PROXIMITY**
     - robot drove near the container, e.g. based on GPS
@@ -124,7 +130,6 @@ undocking_client.send_goal(goal)
 ```bibtex
 @inproceedings{Bohne:2023,
     author = {Tim Bohne and Gurunatraj Parthasarathy and Benjamin Kisliuk},
-    editor = {Christa Hoffmann and Anthony Stein and Arno Ruckelshausen and Henning M{\"{u}}ller and Thilo Steckel and Helga Floto},
     title = {A systematic approach to the development of long-term autonomous robotic systems for agriculture},
     booktitle = {43. GIL-Jahrestagung, Resiliente Agri-Food-Systeme, 13.-14. Februar 2023, Osnabr{\"{u}}ck, Germany},
     series = {{LNI}},
@@ -133,16 +138,15 @@ undocking_client.send_goal(goal)
     publisher = {Gesellschaft f{\"{u}}r Informatik e.V.},
     year = {2023},
     url = {https://dl.gi.de/handle/20.500.12116/40260},
-    timestamp = {Tue, 04 Jul 2023 17:42:54 +0200},
     biburl = {https://dblp.org/rec/conf/gil/BohnePK23.bib},
     bibsource = {dblp computer science bibliography, https://dblp.org}
 }
 
-@thesis{Bohne:2022,
-author = {Bohne, Tim},
-year = {2022},
-month = {04},
-title = {Execution Monitoring for Long-Term Autonomous Plant Observation with a Mobile Robot}
+@mastersthesis{Bohne:2022,
+    author = {Bohne, Tim},
+    year = {2022},
+    month = {04},
+    title = {Execution Monitoring for Long-Term Autonomous Plant Observation with a Mobile Robot}
 }
 ```
 
