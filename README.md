@@ -119,3 +119,30 @@ undocking_client.send_goal(goal)
 
 - `rostopic pub -1 /container/rampA_position_controller/command std_msgs/Float64 "data: 1.57"`
 
+## Related Publications
+
+```bibtex
+@inproceedings{Bohne:2023,
+    author = {Tim Bohne and Gurunatraj Parthasarathy and Benjamin Kisliuk},
+    editor = {Christa Hoffmann and Anthony Stein and Arno Ruckelshausen and Henning M{\"{u}}ller and Thilo Steckel and Helga Floto},
+    title = {A systematic approach to the development of long-term autonomous robotic systems for agriculture},
+    booktitle = {43. GIL-Jahrestagung, Resiliente Agri-Food-Systeme, 13.-14. Februar 2023, Osnabr{\"{u}}ck, Germany},
+    series = {{LNI}},
+    volume = {{P-330}},
+    pages = {285--290},
+    publisher = {Gesellschaft f{\"{u}}r Informatik e.V.},
+    year = {2023},
+    url = {https://dl.gi.de/handle/20.500.12116/40260},
+    timestamp = {Tue, 04 Jul 2023 17:42:54 +0200},
+    biburl = {https://dblp.org/rec/conf/gil/BohnePK23.bib},
+    bibsource = {dblp computer science bibliography, https://dblp.org}
+}
+
+@thesis{Bohne:2022,
+author = {Bohne, Tim},
+year = {2022},
+month = {04},
+title = {Execution Monitoring for Long-Term Autonomous Plant Observation with a Mobile Robot}
+}
+```
+
