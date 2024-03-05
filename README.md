@@ -5,6 +5,8 @@
 
 Detailed background information is available in my [**master's thesis**](https://github.com/tbohne/msc) (chapter 4.2 "Autonomous Energy Supply").
 
+Video demonstration of the system in the Gazebo simulation: [Autonomous Docking with an Inductive Charging Station](https://www.youtube.com/watch?v=jmFn3GquiDI).
+
 ## Architecture
 ![](img/docking_smach.png)
 
@@ -149,4 +151,3 @@ undocking_client.send_goal(goal)
     title = {Execution Monitoring for Long-Term Autonomous Plant Observation with a Mobile Robot}
 }
 ```
-
